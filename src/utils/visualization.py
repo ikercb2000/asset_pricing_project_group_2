@@ -13,17 +13,17 @@ from tqdm import tqdm
 # ---------------
 
 from utils.helpers import ann_rets, cov_mat
+from utils.types import plot_ptf
 
 # Random Weights
 # --------------
 
 
-def random_w(n: int) -> pd.DataFrame:
+def random_w(n: int, alpha: float = 3.0) -> np.ndarray:
     """
-    Obtains normalized random weights for a portfolio
+    Obtains random weights following a Dirichlet distribution
     """
-    unnorm_weights = np.random.rand(n)
-    return unnorm_weights/sum(unnorm_weights)
+    return np.random.dirichlet(alpha * np.ones(n))
 
 
 # Portfolio Sampler
@@ -31,128 +31,134 @@ def random_w(n: int) -> pd.DataFrame:
 
 def portfolio_sampler(
     returns: pd.DataFrame,
-    n_assets: int,
     n_portfolios: int,
-    just_eff: bool = False
+    min_assets: int = 1,
+    max_assets: int | None = None,
+    random_state: int | None = None
 ) -> Tuple[List[List[float]], List[np.ndarray], List[np.ndarray]]:
     """
-    Generates n_portfolios random portflios. Allows to just plot efficient frontier.
+    Generates n_portfolios random portflios, optionally around some target return
     """
 
-    stocks_list = list(returns.columns)
+    np.random.seed(random_state)
 
+    stocks_list = list(returns.columns)
     mu_rets = ann_rets(returns)
     cov_rets = cov_mat(returns)
+
+    if max_assets is None:
+        max_assets = len(stocks_list)
 
     mean_var_pairs: List[List[float]] = []
     weights_list: List[np.ndarray] = []
     tickers_list: List[np.ndarray] = []
 
-    for _ in range(n_portfolios):
-        selected_assets = np.random.choice(
-            stocks_list, n_assets, replace=False)
+    pbar = tqdm(total=n_portfolios, desc="Sampling portfolios")
 
-        weights = random_w(n_assets)
-        w = np.asarray(weights)
+    while len(mean_var_pairs) < n_portfolios:
+        # número de activos aleatorio entre min_assets y max_assets (incluido)
+        k = np.random.randint(min_assets, max_assets + 1)
+
+        selected_assets = np.random.choice(
+            stocks_list, k, replace=False
+        )
+
+        # pesos en esos k activos
+        # o sin alpha si prefieres tu versión básica
+        w = random_w(k, alpha=3.0)
 
         mu_sel = mu_rets.loc[selected_assets].values
         cov_sel = cov_rets.loc[selected_assets, selected_assets].values
 
-        ptf_excess_ret = float(w @ mu_sel)
-        ptf_excess_var = float(w @ cov_sel @ w)
+        ptf_ret = float(w @ mu_sel)
+        ptf_var = float(w @ cov_sel @ w)
 
-        if just_eff:
-            dominated = False
-            for R, V in mean_var_pairs:
-                if (R > ptf_excess_ret) and (V < ptf_excess_var):
-                    dominated = True
-                    break
-
-            if dominated:
-                continue
-
-        mean_var_pairs.append([ptf_excess_ret, ptf_excess_var])
+        mean_var_pairs.append([ptf_ret, ptf_var])
         weights_list.append(w)
         tickers_list.append(selected_assets)
 
+        pbar.update(1)
+
+    pbar.close()
     return mean_var_pairs, weights_list, tickers_list
-
-# Portfolio Sampler for Efficent Frontier
-# ---------------------------------------
-
-
-def portfolio_sampler_eff(
-    returns: pd.DataFrame,
-    n_assets: int,
-    n_portfolios: int,
-):
-
-    mean_variance_pairs = []
-    weights_list = []
-    tickers_list = []
-
-    mu_rets = ann_rets(returns)
-    cov_rets = cov_mat(returns)
-
-    for i in tqdm(range(n_portfolios)):
-        next_i = False
-        while True:
-            assets = np.random.choice(
-                list(returns.columns), n_assets, replace=False)
-
-            weights = np.random.rand(n_assets)
-            weights = weights/sum(weights)
-
-            portfolio_E_Variance = 0
-            portfolio_E_Return = 0
-            for i in range(len(assets)):
-                portfolio_E_Return += weights[i] * mu_rets.loc[assets[i]]
-                for j in range(len(assets)):
-                    portfolio_E_Variance += weights[i] * \
-                        weights[j] * cov_rets.loc[assets[i], assets[j]]
-
-            for R, V in mean_variance_pairs:
-                if (R > portfolio_E_Return) & (V < portfolio_E_Variance):
-                    next_i = True
-                    break
-            if next_i:
-                break
-
-            mean_variance_pairs.append(
-                [portfolio_E_Return, portfolio_E_Variance])
-            weights_list.append(weights)
-            tickers_list.append(assets)
-            break
-
-    return mean_variance_pairs, weights_list, tickers_list
 
 
 # Mean-Variance Plot
 # ------------------
 
 
-def mv_plot(mv_pairs: List[List[float]], rf: float = 0.05) -> None:
+def mv_plot(mv_pairs: List[List[float]], rf: float = 0.05, highlight_ptf: plot_ptf = None) -> None:
+    """
+    Plot Mean-Variance Frontier Graph with optional highlight portfolios
+    """
+
     mv_pairs = np.array(mv_pairs)
 
     risk_free_rate = rf
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=mv_pairs[:, 1]**0.5, y=mv_pairs[:, 0],
-                             marker=dict(color=(mv_pairs[:, 0]-risk_free_rate)/(mv_pairs[:, 1]**0.5),
-                                         showscale=True,
-                                         size=7,
-                                         line=dict(width=1),
-                                         colorscale="RdBu",
-                                         colorbar=dict(title="Sharpe<br>Ratio")
-                                         ),
-                             mode='markers'))
-    fig.update_layout(template='plotly_white',
-                      xaxis=dict(title='Annualised Risk (Volatility)'),
-                      yaxis=dict(title='Annualised Return'),
-                      title='Sample of Random Portfolios',
-                      width=850,
-                      height=500)
+    fig.add_trace(
+        go.Scatter(
+            x=mv_pairs[:, 1]**0.5,
+            y=mv_pairs[:, 0],
+            marker=dict(
+                color=(mv_pairs[:, 0] - risk_free_rate) /
+                (mv_pairs[:, 1]**0.5),
+                showscale=True,
+                size=7,
+                line=dict(width=1),
+                colorscale="RdBu",
+                colorbar=dict(title="Sharpe<br>Ratio", x=1.07),
+            ),
+            mode='markers',
+            name="Random Portfolios"
+        )
+    )
+
+    fig.update_layout(
+        template='plotly_white',
+        xaxis=dict(title='Annualised Risk (Volatility)'),
+        yaxis=dict(title='Annualised Return'),
+        title='Sample of Random Portfolios',
+        width=850,
+        height=500,
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            bgcolor="rgba(255,255,255,0.7)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1,
+        ),
+    )
+
     fig.update_xaxes(range=[0.18, 0.32])
     fig.update_yaxes(range=[0.02, 0.27])
     fig.update_layout(coloraxis_colorbar=dict(title="Sharpe Ratio"))
+
+    if highlight_ptf:
+        for name, info in highlight_ptf.items():
+            mv_pair = info.mv_pair
+            color = info.color
+            ret = float(mv_pair[0])
+            var = float(mv_pair[1])
+            vol = var**0.5
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[vol],
+                    y=[ret],
+                    mode="markers+text",
+                    marker=dict(
+                        color=color,
+                        size=12,
+                        symbol="x"
+                    ),
+                    text=[name],
+                    textposition="top center",
+                    name=name
+                )
+            )
+
     fig.show()
