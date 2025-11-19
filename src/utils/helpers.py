@@ -29,6 +29,9 @@ def cov_mat(returns: pd.DataFrame) -> pd.DataFrame:
 
 
 def ptf_results_print(opt_ret: float, opt_vol: float, weights: Dict[str, float]) -> None:
+    """
+    Print the portfolio return, volatility and weights
+    """
 
     print(f"Optimal Return: {opt_ret:.4f} | Optimal Volatility: {opt_vol:.4f}")
     print("\nWeights by Stock:\n")

@@ -2,10 +2,7 @@
 # --------
 
 import yfinance as yf
-import pandas as pd
-import os
 
-from tqdm import tqdm
 from pathlib import Path
 
 # Download data
