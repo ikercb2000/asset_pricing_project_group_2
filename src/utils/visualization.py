@@ -5,18 +5,134 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from typing import List, Tuple
 from tqdm import tqdm
-from IPython.display import Image, display
+from IPython.display import Image, HTML, display
+from pathlib import Path
 
 # Project Modules
 # ---------------
 
 from utils.types import plot_ptf
 
-# Random Weights
-# --------------
+
+# Data Analysis Plot Class
+# ------------------------
+
+class DataAnalysisPlots:
+    def __init__(self, returns: pd.DataFrame, base_dir: str | Path):
+        self.returns = returns
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def _savefig(self, name: str):
+        path = self.base_dir / f"{name}.png"
+        plt.savefig(path, dpi=200, bbox_inches="tight")
+        plt.close()
+
+    def plot_boxplots(self):
+        """
+        Plot boxplot plot for the data.
+        """
+        plt.figure(figsize=(10, 5))
+        self.returns.boxplot(rot=90)
+        plt.title("Boxplots of Monthly Returns")
+        self._savefig("boxplots")
+
+    def plot_corr_heatmap(self):
+        """
+        Plot correlation heatmap matrix.
+        """
+        plt.figure(figsize=(10, 5))
+        sns.heatmap(self.returns.corr(), cmap="RdBu", center=0)
+        plt.title("Correlation Heatmap")
+        self._savefig("correlation_heatmap")
+
+    def plot_rolling_vol(self, window: int = 24, legend_mode: str = "horizontal"):
+        """
+        Plot rolling volatility with improved layout.
+        """
+        rolling_vol = self.returns.rolling(window).std()
+
+        if legend_mode == "subset":
+            avg_vol = rolling_vol.mean().sort_values(ascending=False)
+            selected = avg_vol.index[:5]
+            rolling_to_plot = rolling_vol[selected]
+        else:
+            rolling_to_plot = rolling_vol
+
+        plt.figure(figsize=(4, 8))
+
+        ax = rolling_to_plot.plot(alpha=0.9, linewidth=1.2)
+        plt.title(f"Rolling Volatility ({window}-month)")
+        plt.xlabel("Date")
+        plt.ylabel("Volatility")
+
+        # LEGEND HANDLING
+        if legend_mode == "horizontal":
+            plt.legend(
+                loc='upper center',
+                bbox_to_anchor=(0.5, -0.15),
+                ncol=5,
+                fontsize=9,
+                frameon=False
+            )
+        elif legend_mode == "subset":
+            plt.legend(
+                loc='upper right',
+                fontsize=9,
+                frameon=False,
+                title="Selected Assets"
+            )
+        elif legend_mode is None:
+            ax.get_legend().remove()
+
+        self._savefig("rolling_vol")
+
+    def print_cov_condition(self):
+        """
+        Print condition number of covariance matrix.
+        """
+        cov = self.returns.cov()
+        cond = np.linalg.cond(cov)
+        print("--- Covariance Matrix Condition Number ---")
+        print(f"Condition number: {cond: .3e}")
+        eigvals = np.linalg.eigvals(cov)
+        print(f"Min eigenvalue : {eigvals.min(): .3e}")
+        print("------------------------------------------")
+
+    def print_describe(self):
+        """
+        Print descriptive table for analysing data.
+        """
+        desc = self.returns.describe().T
+        desc["n_missing"] = self.returns.isna().sum()
+        desc["var"] = self.returns.var()
+        cols = ["count", "n_missing", "mean", "std",
+                "var", "min", "25%", "50%", "75%", "max"]
+        desc = desc[cols]
+        print("--- Descriptive statistics of monthly returns ---")
+        display(desc)
+
+    # 6) Mostrar plots uno debajo de otro con espacio
+    def display_plots(self, names: list[str]):
+        """
+        Shows the plots computed before.
+        """
+        for i, name in enumerate(names):
+            img_path = self.base_dir / f"{name}.png"
+            if not img_path.exists():
+                print(f"Plot file not found: {img_path}")
+                continue
+            display(Image(filename=str(img_path)))
+            if i < len(names) - 1:
+                display(HTML("<br><br>"))
+
+# Random Weights Function
+# -----------------------
 
 
 def random_w_leverage(
@@ -37,8 +153,8 @@ def random_w_leverage(
 
     return w
 
-# Portfolio Sampler
-# -----------------
+# Portfolio Sampler Function
+# --------------------------
 
 
 def portfolio_sampler(
