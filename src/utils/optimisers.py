@@ -4,13 +4,13 @@
 import numpy as np
 import pandas as pd
 
-from typing import Tuple, List, Dict, Any
-from scipy.optimize import minimize
+from typing import Tuple, Dict
 
 # Project Modules
 # ---------------
 
 from utils.helpers import ann_rets, cov_mat
+from utils.enums import FreqPrices
 
 # Markowitz Optimization Functions
 # --------------------------------
@@ -24,39 +24,28 @@ def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
     return np.dot(weights.T, np.dot(cov_ret, weights))
 
 
-def markowitz_optimiser(returns: pd.DataFrame, r_min: float = 0, w_max: float = 1) -> Tuple[Dict[str, float], float, float]:
+def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
     """
-    Markowitz Quadratic Optimization Problem Solver for Optimal Portfolio
+    Markowitz Quadratic Optimization Problem Tangency Portfolio
     """
 
-    mu_ret: pd.DataFrame = ann_rets(returns)
-    cov_ret: pd.DataFrame = cov_mat(returns)
+    tickers = list(cov_ret.columns)
+    num_assets: int = len(tickers)
 
-    tickers = list(returns.columns)
-    num_assets: int = len(returns.columns)
+    Sigma_inv = np.linalg.inv(cov_ret)
+    ones = np.ones(num_assets)
 
-    constraints: List[Dict[str, Any]] = [
-        {"type": "eq", "fun": lambda x: np.sum(x) - 1},
-        {"type": "ineq", "fun": lambda x: np.dot(x.T, mu_ret) - r_min},
-    ]
+    w_unnorm = (Sigma_inv @ mu_ret)
+    denom = (ones @ w_unnorm)
+    w = w_unnorm / denom
 
-    bounds: Tuple[Tuple[float, float]] = tuple(
-        (0, w_max) for asset in range(num_assets))
+    weights_dict: Dict[str, float] = {
+        ticker: float(weight) for ticker, weight in zip(tickers, w)
+    }
 
-    opts: Dict[str, Any] = minimize(
-        fun=calculate_var,
-        x0=num_assets * [1.0 / num_assets],
-        args=(cov_ret,),
-        method="SLSQP",
-        options={"ftol": 1e-7, "maxiter": 100},
-        bounds=bounds,
-        constraints=constraints,
-    )
-    w: List[float] = opts["x"]
-    weights_dict = {ticker: float(weight)
-                    for ticker, weight in zip(tickers, w)}
-    r_opt: float = np.dot(w, mu_ret)
-    vol_opt: float = np.sqrt(calculate_var(w, cov_ret))
+    r_opt: float = float(w @ mu_ret)
+    vol_opt: float = float(np.sqrt(w @ cov_ret @ w))
+
     return weights_dict, r_opt, vol_opt
 
 # Resampling Optimization Functions
@@ -79,18 +68,19 @@ def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, rand
     return pd.DataFrame(sim, columns=mu_ret.index)
 
 
-def resampling_optimiser(returns: pd.DataFrame, random_state: int, n_bootstrap: int = 100, r_min: float = 0, w_max: float = 1) -> Tuple[Dict[str, float], float, float]:
+def resampling_optimiser(
+    mu_ret: pd.Series,
+    cov_ret: pd.DataFrame,
+    n_obs: int,
+    random_state: int,
+    n_bootstrap: int = 100
+) -> Tuple[Dict[str, float], float, float]:
     """
-    Resampling optimiser for Optimal Portfolio with Markowitz
+    Resampling optimiser for Optimal Portfolio with Markowitz.
     """
 
-    mu_ret: pd.DataFrame = ann_rets(returns)
-    cov_ret: pd.DataFrame = cov_mat(returns)
-
-    tickers = list(returns.columns)
-    num_assets: int = len(returns.columns)
-
-    n_draws = len(returns)
+    tickers = list(cov_ret.columns)
+    num_assets: int = len(tickers)
 
     all_weights = np.zeros((n_bootstrap, num_assets))
 
@@ -99,17 +89,19 @@ def resampling_optimiser(returns: pd.DataFrame, random_state: int, n_bootstrap: 
         bootstrap_df = resample_inputs(
             mu_ret=mu_ret,
             cov_ret=cov_ret,
-            n_draws=n_draws,
-            random_state=random_state,
+            n_draws=n_obs,
+            random_state=random_state + 5*b,
         )
 
-        w_dict, _, _ = markowitz_optimiser(
-            returns=bootstrap_df,
-            r_min=r_min,
-            w_max=w_max,
+        mu_bootstrap: pd.Series = ann_rets(bootstrap_df, FreqPrices.YEARLY)
+        cov_bootstrap: pd.DataFrame = cov_mat(bootstrap_df, FreqPrices.YEARLY)
+
+        w_dict, _, _ = markowitz_tangency_ptf(
+            mu_ret=mu_bootstrap,
+            cov_ret=cov_bootstrap
         )
 
-        all_weights[b, :] = [w_dict.get(t, 0.0) for t in tickers]
+        all_weights[b, :] = [w_dict.get(t) for t in tickers]
 
     avg_weights = all_weights.mean(axis=0)
 
@@ -118,7 +110,7 @@ def resampling_optimiser(returns: pd.DataFrame, random_state: int, n_bootstrap: 
     }
 
     w_vec = avg_weights
-    resampled_ret: float = float(np.dot(w_vec, mu_ret.values))
-    resampled_vol: float = float(np.sqrt(w_vec @ cov_ret.values @ w_vec))
+    resampled_ret: float = float(w_vec @ mu_ret)
+    resampled_vol: float = float(np.sqrt(w_vec@cov_ret@w_vec))
 
     return avg_weights_dict, resampled_ret, resampled_vol
