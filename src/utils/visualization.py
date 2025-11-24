@@ -29,15 +29,18 @@ class DataAnalysisPlots:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _savefig(self, name: str):
-        path = self.base_dir / f"{name}.png"
-        plt.savefig(path, dpi=200, bbox_inches="tight")
+        """
+        Save figures' helper.
+        """
+        path = Path(f"{self.base_dir}", f"{name}.png")
+        plt.savefig(path, dpi=100, bbox_inches="tight")
         plt.close()
 
     def plot_boxplots(self):
         """
         Plot boxplot plot for the data.
         """
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(14, 4))
         self.returns.boxplot(rot=90)
         plt.title("Boxplots of Monthly Returns")
         self._savefig("boxplots")
@@ -46,7 +49,7 @@ class DataAnalysisPlots:
         """
         Plot correlation heatmap matrix.
         """
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(14, 6))
         sns.heatmap(self.returns.corr(), cmap="RdBu", center=0)
         plt.title("Correlation Heatmap")
         self._savefig("correlation_heatmap")
@@ -64,14 +67,13 @@ class DataAnalysisPlots:
         else:
             rolling_to_plot = rolling_vol
 
-        plt.figure(figsize=(4, 8))
+        plt.figure(figsize=(14, 4))
 
         ax = rolling_to_plot.plot(alpha=0.9, linewidth=1.2)
         plt.title(f"Rolling Volatility ({window}-month)")
         plt.xlabel("Date")
         plt.ylabel("Volatility")
 
-        # LEGEND HANDLING
         if legend_mode == "horizontal":
             plt.legend(
                 loc='upper center',
@@ -117,13 +119,12 @@ class DataAnalysisPlots:
         print("--- Descriptive statistics of monthly returns ---")
         display(desc)
 
-    # 6) Mostrar plots uno debajo de otro con espacio
     def display_plots(self, names: list[str]):
         """
         Shows the plots computed before.
         """
         for i, name in enumerate(names):
-            img_path = self.base_dir / f"{name}.png"
+            img_path = Path(f"{self.base_dir}", f"{name}.png")
             if not img_path.exists():
                 print(f"Plot file not found: {img_path}")
                 continue
