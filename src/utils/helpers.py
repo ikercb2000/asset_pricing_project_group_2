@@ -5,24 +5,30 @@ import pandas as pd
 
 from typing import Dict
 
+# Project Modules
+# ---------------
+
+from utils.enums import FreqPrices
+
 # Annualized Means
 # ----------------
 
 
-def ann_rets(returns: pd.DataFrame) -> pd.DataFrame:
+def ann_rets(returns: pd.DataFrame, frequency: FreqPrices) -> pd.DataFrame:
     """Obtains mean vector of annualized returns"""
-    return (1+returns.mean())**252-1
+
+    return ((1+returns.mean())**frequency.value)-1
 
 # Covariance Matrix
 # -----------------
 
 
-def cov_mat(returns: pd.DataFrame) -> pd.DataFrame:
+def cov_mat(returns: pd.DataFrame, frequency: FreqPrices) -> pd.DataFrame:
     """
     Obtains covariance matrix of annualized returns
     """
 
-    return returns.cov()*252
+    return (returns.cov()*frequency.value)
 
 # Portfolio Results Print Function
 # --------------------------------
