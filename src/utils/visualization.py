@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from typing import List, Tuple
+from joblib import Parallel, delayed
+from typing import List, Tuple, Dict
 from tqdm import tqdm
 from IPython.display import Image, HTML, display
 from pathlib import Path
@@ -158,61 +159,60 @@ def random_w_leverage(
 # --------------------------
 
 
-def portfolio_sampler(
-    mu_rets: pd.Series,
-    cov_rets: pd.DataFrame,
-    n_portfolios: int,
-    min_assets: int = 1,
-    max_assets: int | None = None,
-    random_state: int | None = None,
-    net_exposure: float = 1.0,
-    gross_limit: float = 3.0,
-) -> Tuple[List[List[float]], List[np.ndarray], List[np.ndarray]]:
+def _sample_one(
+    mu_arr, cov_arr, tickers, n_assets_total,
+    min_assets, max_assets, net_exposure, gross_limit, rng_seed
+):
+    rng = np.random.default_rng(rng_seed)
 
-    np.random.seed(random_state)
+    k = rng.integers(min_assets, max_assets + 1)
+    idx = rng.choice(n_assets_total, size=k, replace=False)
 
-    stocks_list = list(cov_rets.columns)
+    w = random_w_leverage(k, net_exposure=net_exposure,
+                          gross_limit=gross_limit)
+
+    mu_sel = mu_arr[idx]
+    cov_sel = cov_arr[np.ix_(idx, idx)]
+
+    ret = float(w @ mu_sel)
+    var = float(w @ cov_sel @ w)
+
+    return (ret, var, w, tickers[idx])
+
+
+def portfolio_sampler(mu_rets, cov_rets, n_portfolios, min_assets=1, max_assets=None, random_state=123, n_jobs=-1, net_exposure=1.0, gross_limit=3.0):
+    tickers = np.array(cov_rets.columns)
+    mu_arr = mu_rets.values
+    cov_arr = cov_rets.values
+    n_assets_total = len(tickers)
 
     if max_assets is None:
-        max_assets = len(stocks_list)
+        max_assets = n_assets_total
 
-    mean_var_pairs = []
-    weights_list = []
-    tickers_list = []
+    seeds = np.random.SeedSequence(random_state).spawn(n_portfolios)
 
-    pbar = tqdm(total=n_portfolios, desc="Sampling portfolios")
-
-    while len(mean_var_pairs) < n_portfolios:
-
-        k = np.random.randint(min_assets, max_assets + 1)
-        selected_assets = np.random.choice(stocks_list, k, replace=False)
-
-        w = random_w_leverage(
-            k,
-            net_exposure=net_exposure,
-            gross_limit=gross_limit,
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_sample_one)(
+            mu_arr, cov_arr, tickers,
+            n_assets_total,
+            min_assets, max_assets,
+            net_exposure, gross_limit,
+            s.generate_state(1)[0]  # each worker gets its own seed
         )
+        for s in seeds
+    )
 
-        mu_sel = mu_rets.loc[selected_assets].values
-        cov_sel = cov_rets.loc[selected_assets, selected_assets].values
+    mean_var_pairs = [(r, v) for (r, v, _, _) in results]
+    weights_list = [w for (_, _, w, _) in results]
+    tickers_list = [t for (_, _, _, t) in results]
 
-        ptf_ret = float(w @ mu_sel)
-        ptf_var = float(w @ cov_sel @ w)
-
-        mean_var_pairs.append([ptf_ret, ptf_var])
-        weights_list.append(w)
-        tickers_list.append(selected_assets)
-
-        pbar.update(1)
-
-    pbar.close()
     return mean_var_pairs, weights_list, tickers_list
 
 
 # Mean-Variance Plot
 # ------------------
 
-def mv_plot(mv_pairs: List[List[float]], save_path: str, rf: float = 0.05, highlight_ptf: plot_ptf = None) -> None:
+def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05, highlight_ptf: plot_ptf = None) -> None:
     """
     Plot Mean-Variance Frontier Graph with optional highlight portfolios
     """
@@ -240,8 +240,8 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, rf: float = 0.05, highl
 
     fig.update_layout(
         template='plotly_white',
-        xaxis=dict(title='Annualised Risk (Volatility)'),
-        yaxis=dict(title='Annualised Return'),
+        xaxis=dict(title='Monthly Risk (Volatility)'),
+        yaxis=dict(title='Monthly Return'),
         title='Sample of Random Portfolios',
         width=850,
         height=500,
@@ -276,4 +276,65 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, rf: float = 0.05, highl
             )
 
     fig.write_image(save_path, scale=2)
-    display(Image(filename=save_path))
+    if show_plot:
+        display(Image(filename=save_path))
+
+# Plot Window MV Function
+# -----------------------
+
+
+def plot_window_mv(
+    end: int,
+    date: pd.Timestamp,
+    mv_plot_dir: str | Path,
+    show_plots: bool,
+    rf: float,
+    global_mv_pairs,
+    window_mv_data: Dict[str, Tuple[float, float]],
+):
+
+    highlights: Dict[str, plot_ptf] = {}
+    colors = ["green", "orange", "purple", "black", "red", "blue"]
+
+    for i, (m_name, (r_m, vol_m)) in enumerate(window_mv_data.items()):
+        highlights[m_name] = plot_ptf(
+            mv_pair=(r_m, vol_m**2),   # mensual
+            color=colors[i % len(colors)],
+        )
+
+    date_str = str(date).replace(" ", "-")
+    fname = Path(mv_plot_dir, f"mv_oos_{end:04d}_{date_str}.png")
+
+    mv_plot(
+        mv_pairs=global_mv_pairs,
+        save_path=str(fname),
+        show_plot=show_plots,
+        rf=rf,
+        highlight_ptf=highlights,
+    )
+
+# Batch Ploto Function
+# --------------------
+
+
+def _do_plot_batch(
+    end, date, mv_plot_dir, show_plots, rf,
+    mu_w, cov_w, n_ptfs, min_assets, max_assets,
+    random_state, window_mv_data
+):
+    """
+    Plots for batch and executes in parallel inside each thread
+    """
+    mv_pairs_t, _, _ = portfolio_sampler(
+        mu_rets=mu_w,
+        cov_rets=cov_w,
+        n_portfolios=n_ptfs,
+        min_assets=min_assets,
+        max_assets=max_assets,
+        random_state=random_state,
+    )
+
+    plot_window_mv(
+        end, date, mv_plot_dir, show_plots, rf,
+        mv_pairs_t, window_mv_data
+    )
