@@ -93,8 +93,8 @@ def resampling_optimiser(
             random_state=random_state + 5*b,
         )
 
-        mu_bootstrap: pd.Series = ann_rets(bootstrap_df, FreqPrices.YEARLY)
-        cov_bootstrap: pd.DataFrame = cov_mat(bootstrap_df, FreqPrices.YEARLY)
+        mu_bootstrap: pd.Series = bootstrap_df.mean()
+        cov_bootstrap: pd.DataFrame = bootstrap_df.cov()
 
         w_dict, _, _ = markowitz_tangency_ptf(
             mu_ret=mu_bootstrap,
