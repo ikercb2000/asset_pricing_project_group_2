@@ -20,9 +20,15 @@ from pathlib import Path
 
 from utils.visualization import portfolio_sampler, mv_plot
 from utils.helpers import ptf_results_print, ann_rets, cov_mat
-from utils.optimisers import markowitz_optimiser, resampling_optimiser
+from utils.optimisers import (
+    markowitz_optimiser,
+    markowitz_optimiser_oos,
+    resampling_optimiser,
+    constrained_markowitz_optimiser,
+)
 from utils.types import plot_ptf
 from utils.enums import FreqPrices
+from utils.backtesting import run_oos_backtest
 
 
 # In[12]:
@@ -48,6 +54,26 @@ prices = pd.read_csv(datapath, index_col=0)
 prices = prices.drop(["DOW","V"],axis=1).replace(0,np.nan).replace(np.inf,np.nan)
 monthly_returns = prices.pct_change().dropna()
 monthly_returns.head()
+
+# Loading US T-bill monthly data (rf rate)
+tbill_path = Path("data", "2025-11-17_GBM_Govt.csv")
+tbill = pd.read_csv(tbill_path, parse_dates=["Date"])
+
+# Setting index and align to stock returns period
+tbill = tbill.set_index("Date").sort_index()
+tbill = tbill.loc[monthly_returns.index.min(): monthly_returns.index.max()]
+
+# Ensuring PX_LAST is numeric and Converting from percent to decimal
+tbill["PX_LAST"] = pd.to_numeric(tbill["PX_LAST"], errors = "coerce")
+tbill["rf_ann"] = tbill["PX_LAST"]/100.0
+
+# Dropping any rows where rf_ann could not be computed
+tbill = tbill.dropna(subset = ["rf_ann"])
+
+# Computing average annual T-bill rate for the entire OOS period
+rf_ann = tbill["rf_ann"].mean()
+
+print(f"Using average annual T-bill rf = {rf_ann:.4f}")
 
 
 # From the data, compute the mean vector and the covariance matrix of the data, annualized:
@@ -82,7 +108,7 @@ ptf_results_print(opt_ret, opt_vol, weights)
 
 
 mv_pairs, _, _ = portfolio_sampler(mu_rets=mu_returns, cov_rets=cov_returns, n_portfolios=N_PTFS, min_assets=1)
-mv_plot(mv_pairs,0.02, highlight_ptf=OPT_PTFS)
+mv_plot(mv_pairs, "plots/efficient_frontier.png", highlight_ptf=OPT_PTFS)
 
 
 # ---
@@ -109,8 +135,42 @@ ptf_results_print(opt_ret, opt_vol, weights)
 
 
 mv_pairs, _, _ = portfolio_sampler(mu_rets = mu_returns,cov_rets = cov_returns, n_portfolios=N_PTFS, min_assets=1)
-mv_plot(mv_pairs,0.02, highlight_ptf=OPT_PTFS)
+mv_plot(mv_pairs, "plots/resampling_efficient_frontier.png", highlight_ptf=OPT_PTFS)
 
+
+# ---
+# ### Third Step: Out-of-Sample Rolling_Window Backtest
+# ---
+
+# Rolling window length (in months)
+WINDOW = 60
+
+MV_PLOT_DIR = Path("plots", "mv_oos")
+MV_PLOT_DIR.mkdir(parents = True, exist_ok = True)
+
+methods = {
+    "Markowitz": markowitz_optimiser_oos,
+    "Constrained (10%)": constrained_markowitz_optimiser,
+}
+
+oos_df, stats_df = run_oos_backtest(
+    returns=monthly_returns,
+    frequency=FREQ_DATA,
+    window=WINDOW,
+    methods=methods,
+    mv_plot_dir=MV_PLOT_DIR,
+    show_plots=False,
+    do_plots=False,
+    print_res=False,
+    n_ptfs=1000,
+    min_assets=1,
+    max_assets=None,
+    random_state=RANDOM_SEED,
+    rf=rf_ann,
+)
+
+print("\n=== OOS Performance Statistics ===")
+print(stats_df)
 
 # ---
 
