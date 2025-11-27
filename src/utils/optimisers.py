@@ -24,6 +24,8 @@ def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
     return np.dot(weights.T, np.dot(cov_ret, weights))
 
 
+# Change name to optimal risky ptf
+
 def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
     """
     Markowitz Quadratic Optimization Problem Tangency Portfolio
@@ -48,6 +50,48 @@ def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
 
     return weights_dict, r_opt, vol_opt
 
+# Markowitz Efficient Frontier Function
+# --------------------------------------
+
+
+def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_points: int = 100, only_efficient: bool = False,
+                               sup_lim: float = 0.2, inf_lim: float = -0.1) -> np.ndarray:
+
+    mu = np.asarray(mu_rets.values, dtype=float).reshape(-1)
+    cov = np.asarray(cov_rets.values, dtype=float)
+
+    inv_cov = np.linalg.pinv(cov)
+
+    ones = np.ones_like(mu)
+
+    A = ones @ inv_cov @ ones
+    B = ones @ inv_cov @ mu
+    C = mu  @ inv_cov @ mu
+    D = A * C - B**2
+
+    if D <= 0:
+        raise ValueError("Covariance matrix and mean vector lead to non-positive D; "
+                         "efficient frontier not well-defined.")
+
+    mu_gmv = B / A
+    var_gmv = 1.0 / A
+
+    if only_efficient:
+        # Upper branch (efficient set): returns >= mu_gmv
+        ret_min = float(mu_gmv)
+        ret_max = sup_lim
+    else:
+        # Full hyperbola (includes inefficient lower branch)
+        ret_min = inf_lim
+        ret_max = sup_lim
+
+    target_rets = np.linspace(ret_min, ret_max, n_points)
+    target_vars = (A * target_rets**2 - 2 * B * target_rets + C) / D
+
+    ef_pairs = np.column_stack([target_rets, target_vars])
+    return ef_pairs
+
+
 # Resampling Optimization Functions
 # ---------------------------------
 
@@ -68,13 +112,7 @@ def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, rand
     return pd.DataFrame(sim, columns=mu_ret.index)
 
 
-def resampling_optimiser(
-    mu_ret: pd.Series,
-    cov_ret: pd.DataFrame,
-    n_obs: int,
-    random_state: int,
-    n_bootstrap: int = 100
-) -> Tuple[Dict[str, float], float, float]:
+def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int,  random_state: int, n_bootstrap: int = 100) -> Tuple[Dict[str, float], float, float]:
     """
     Resampling optimiser for Optimal Portfolio with Markowitz.
     """

@@ -18,10 +18,11 @@ from pathlib import Path
 # ---------------
 
 from utils.types import plot_ptf
-
+from utils.optimisers import compute_efficient_frontier
 
 # Data Analysis Plot Class
 # ------------------------
+
 
 class DataAnalysisPlots:
     def __init__(self, returns: pd.DataFrame, base_dir: str | Path):
@@ -31,34 +32,29 @@ class DataAnalysisPlots:
 
     def _savefig(self, name: str):
         """
-        Save figures' helper.
+        Save figures as if manually done in a Jupyter notebook.
         """
-        path = Path(f"{self.base_dir}", f"{name}.png")
-        plt.savefig(path, dpi=100, bbox_inches="tight")
-        plt.close()
+        path = Path(self.base_dir, f"{name}.png")
+        plt.tight_layout()             # típico en notebooks
+        # sin bbox_inches="tight"
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        # NOTA: no cerramos la figura → comportamiento notebook
 
     def plot_boxplots(self):
-        """
-        Plot boxplot plot for the data.
-        """
         plt.figure(figsize=(14, 4))
         self.returns.boxplot(rot=90)
         plt.title("Boxplots of Monthly Returns")
         self._savefig("boxplots")
+        plt.show()                     # comportamiento normal notebook
 
     def plot_corr_heatmap(self):
-        """
-        Plot correlation heatmap matrix.
-        """
         plt.figure(figsize=(14, 6))
         sns.heatmap(self.returns.corr(), cmap="RdBu", center=0)
         plt.title("Correlation Heatmap")
         self._savefig("correlation_heatmap")
+        plt.show()
 
     def plot_rolling_vol(self, window: int = 24, legend_mode: str = "horizontal"):
-        """
-        Plot rolling volatility with improved layout.
-        """
         rolling_vol = self.returns.rolling(window).std()
 
         if legend_mode == "subset":
@@ -68,20 +64,20 @@ class DataAnalysisPlots:
         else:
             rolling_to_plot = rolling_vol
 
-        plt.figure(figsize=(14, 4))
+        plt.figure(figsize=(24, 10))
 
-        ax = rolling_to_plot.plot(alpha=0.9, linewidth=1.2)
+        ax = rolling_to_plot.plot(alpha=0.9, linewidth=1)
         plt.title(f"Rolling Volatility ({window}-month)")
         plt.xlabel("Date")
         plt.ylabel("Volatility")
 
         if legend_mode == "horizontal":
             plt.legend(
-                loc='upper center',
+                loc="upper center",
                 bbox_to_anchor=(0.5, -0.15),
                 ncol=5,
                 fontsize=9,
-                frameon=False
+                frameon=False,
             )
         elif legend_mode == "subset":
             plt.legend(
@@ -94,11 +90,9 @@ class DataAnalysisPlots:
             ax.get_legend().remove()
 
         self._savefig("rolling_vol")
+        plt.show()
 
     def print_cov_condition(self):
-        """
-        Print condition number of covariance matrix.
-        """
         cov = self.returns.cov()
         cond = np.linalg.cond(cov)
         print("--- Covariance Matrix Condition Number ---")
@@ -108,30 +102,14 @@ class DataAnalysisPlots:
         print("------------------------------------------")
 
     def print_describe(self):
-        """
-        Print descriptive table for analysing data.
-        """
         desc = self.returns.describe().T
         desc["n_missing"] = self.returns.isna().sum()
         desc["var"] = self.returns.var()
         cols = ["count", "n_missing", "mean", "std",
                 "var", "min", "25%", "50%", "75%", "max"]
         desc = desc[cols]
-        print("--- Descriptive statistics of monthly returns ---")
+        print("\n--- Descriptive statistics of monthly returns ---")
         display(desc)
-
-    def display_plots(self, names: list[str]):
-        """
-        Shows the plots computed before.
-        """
-        for i, name in enumerate(names):
-            img_path = Path(f"{self.base_dir}", f"{name}.png")
-            if not img_path.exists():
-                print(f"Plot file not found: {img_path}")
-                continue
-            display(Image(filename=str(img_path)))
-            if i < len(names) - 1:
-                display(HTML("<br><br>"))
 
 # Random Weights Function
 # -----------------------
@@ -212,9 +190,17 @@ def portfolio_sampler(mu_rets, cov_rets, n_portfolios, min_assets=1, max_assets=
 # Mean-Variance Plot
 # ------------------
 
-def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05, highlight_ptf: plot_ptf = None) -> None:
+def mv_plot(
+    mv_pairs: List[List[float]],
+    save_path: str,
+    show_plot: bool = True,
+    rf: float = 0.05,
+    highlight_ptf: plot_ptf = None,
+    ef_pairs: np.ndarray | None = None,   # NEW
+) -> None:
     """
     Plot Mean-Variance Frontier Graph with optional highlight portfolios
+    and an optional efficient frontier line.
     """
     mv_pairs = np.array(mv_pairs)
     risk_free_rate = rf
@@ -226,7 +212,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
             y=mv_pairs[:, 0],
             marker=dict(
                 color=(mv_pairs[:, 0] - risk_free_rate) /
-                (mv_pairs[:, 1]**0.5),
+                      (mv_pairs[:, 1]**0.5),
                 showscale=True,
                 size=7,
                 line=dict(width=1),
@@ -237,6 +223,37 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
             name="Random Portfolios"
         )
     )
+    if ef_pairs is not None:
+        ef_pairs = np.asarray(ef_pairs)
+        ef_vol = np.sqrt(ef_pairs[:, 1])
+        ef_ret = ef_pairs[:, 0]
+
+        fig.add_trace(
+            go.Scatter(
+                x=ef_vol,
+                y=ef_ret,
+                mode="lines",
+                line=dict(width=3),
+                name="Efficient Frontier",
+            )
+        )
+
+    if highlight_ptf:
+        for name, info in highlight_ptf.items():
+            mv_pair = info.mv_pair
+            color = info.color
+            ret = float(mv_pair[0])
+            vol = float(mv_pair[1])**0.5
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[vol], y=[ret],
+                    mode="markers+text",
+                    marker=dict(color=color, size=12, symbol="x"),
+                    text=[name], textposition="top center",
+                    name=name
+                )
+            )
 
     fig.update_layout(
         template='plotly_white',
@@ -258,23 +275,6 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
         ),
     )
 
-    if highlight_ptf:
-        for name, info in highlight_ptf.items():
-            mv_pair = info.mv_pair
-            color = info.color
-            ret = float(mv_pair[0])
-            vol = float(mv_pair[1])**0.5
-
-            fig.add_trace(
-                go.Scatter(
-                    x=[vol], y=[ret],
-                    mode="markers+text",
-                    marker=dict(color=color, size=12, symbol="x"),
-                    text=[name], textposition="top center",
-                    name=name
-                )
-            )
-
     fig.write_image(save_path, scale=2)
     if show_plot:
         display(Image(filename=save_path))
@@ -283,15 +283,8 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
 # -----------------------
 
 
-def plot_window_mv(
-    end: int,
-    date: pd.Timestamp,
-    mv_plot_dir: str | Path,
-    show_plots: bool,
-    rf: float,
-    global_mv_pairs,
-    window_mv_data: Dict[str, Tuple[float, float]],
-):
+def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: str | Path, show_plots: bool, rf: float, global_mv_pairs, eff_front: np.ndarray,
+                   window_mv_data: Dict[str, Tuple[float, float]]) -> None:
 
     highlights: Dict[str, plot_ptf] = {}
     colors = ["green", "orange", "purple", "black", "red", "blue"]
@@ -311,17 +304,14 @@ def plot_window_mv(
         show_plot=show_plots,
         rf=rf,
         highlight_ptf=highlights,
-    )
+        ef_pairs=eff_front)
 
 # Batch Ploto Function
 # --------------------
 
 
-def _do_plot_batch(
-    end, date, mv_plot_dir, show_plots, rf,
-    mu_w, cov_w, n_ptfs, min_assets, max_assets,
-    random_state, window_mv_data
-):
+def _do_plot_batch(end, date, mv_plot_dir: str, show_plots, rf: float, mu_w: np.ndarray | pd.Series, cov_w, n_ptfs, min_assets, max_assets,
+                   random_state, window_mv_data) -> None:
     """
     Plots for batch and executes in parallel inside each thread
     """
@@ -334,7 +324,9 @@ def _do_plot_batch(
         random_state=random_state,
     )
 
+    eff_front = compute_efficient_frontier(mu_w, cov_w, n_ptfs)
+
     plot_window_mv(
         end, date, mv_plot_dir, show_plots, rf,
-        mv_pairs_t, window_mv_data
+        mv_pairs_t, eff_front, window_mv_data
     )

@@ -16,7 +16,7 @@ from tqdm import tqdm
 from utils.types import plot_ptf
 from utils.enums import FreqPrices
 from utils.helpers import ann_rets, cov_mat
-from utils.visualization import portfolio_sampler, mv_plot, plot_window_mv, _do_plot_batch
+from utils.visualization import portfolio_sampler, _do_plot_batch
 
 # Callable Structure
 # ------------------
