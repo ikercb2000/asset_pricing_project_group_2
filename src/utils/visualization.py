@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 
 
 from joblib import Parallel, delayed
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from IPython.display import Image, display
 from pathlib import Path
 
@@ -90,7 +90,7 @@ def portfolio_sampler(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_portfolios: 
 # ------------------
 
 def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05,
-            highlight_ptf: plot_ptf = None, ef_pairs: np.ndarray | None = None) -> None:
+            highlight_ptf: plot_ptf = None, ef_pairs: Union[np.ndarray, None] = None) -> None:
     """
     Plot Mean-Variance Frontier Graph with optional highlight portfolios
     and an optional efficient frontier line.
@@ -143,7 +143,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
 # -----------------------
 
 
-def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: str | Path, show_plots: bool, rf: float, global_mv_pairs, eff_front: np.ndarray,
+def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], show_plots: bool, rf: float, global_mv_pairs, eff_front: np.ndarray,
                    window_mv_data: Dict[str, Tuple[float, float]]) -> None:
 
     highlights: Dict[str, plot_ptf] = {}
@@ -165,15 +165,19 @@ def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: str | Path, show_p
 # --------------------
 
 
-def do_plot_batch(end, date, mv_plot_dir: str, show_plots, rf: float, mu_w: np.ndarray | pd.Series, cov_w, n_ptfs, min_assets, max_assets,
-                  random_state, window_mv_data) -> None:
+def do_plot_batch(end, date, mv_plot_dir: str, show_plots, rf: float, mu_w: Union[np.ndarray, pd.Series],
+                  cov_w: Union[np.ndarray, pd.DataFrame], n_ptfs: int, min_assets: int, max_assets: int,
+                  random_state: int, window_mv_data) -> None:
     """
     Plots for batch and executes in parallel inside each thread
     """
     mv_pairs_t, _, _ = portfolio_sampler(mu_rets=mu_w, cov_rets=cov_w, n_portfolios=n_ptfs, min_assets=min_assets,
                                          max_assets=max_assets, random_state=random_state)
 
-    eff_front = compute_efficient_frontier(mu_w, cov_w, n_ptfs)
+    eff_front, _ = compute_efficient_frontier(mu_w, cov_w, n_ptfs)
+
+    mv_plot_dir = Path(mv_plot_dir)
+    mv_plot_dir.mkdir(parents=True, exist_ok=True)
 
     plot_window_mv(end, date, mv_plot_dir, show_plots, rf,
                    mv_pairs_t, eff_front, window_mv_data)

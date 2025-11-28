@@ -4,13 +4,8 @@
 import numpy as np
 import pandas as pd
 
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Union
 
-# Project Modules
-# ---------------
-
-from utils.helpers import ann_rets, cov_mat
-from utils.enums import FreqPrices
 
 # Markowitz Optimization Functions
 # --------------------------------
@@ -55,7 +50,7 @@ def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
 
 
 def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_points: int = 100, only_efficient: bool = False,
-                               sup_lim: float = 0.2, inf_lim: float = -0.1) -> np.ndarray:
+                               sup_lim: float = 0.2, inf_lim: float = -0.1) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the efficient frontier returning the mv pairs
     """
@@ -77,7 +72,6 @@ def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_poi
                          "efficient frontier not well-defined.")
 
     mu_gmv: np.ndarray = B / A
-    var_gmv: np.ndarray = 1.0 / A
 
     if only_efficient:
         ret_min: float = float(mu_gmv)
@@ -92,14 +86,23 @@ def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_poi
         A * target_rets**2 - 2 * B * target_rets + C) / D
 
     ef_pairs: np.ndarray = np.column_stack([target_rets, target_vars])
-    return ef_pairs
+
+    # weights
+    g = (inv_cov@ones)
+    h = (inv_cov@mu)
+    lambda1 = (C - B * target_rets) / D
+    lambda2 = (A * target_rets - B) / D
+
+    weights = lambda1[:, None] * g[None, :] + lambda2[:, None] * h[None, :]
+
+    return ef_pairs, weights
 
 
-# Resampling Optimization Functions
-# ---------------------------------
+# Resampling Estimator Functions
+# ------------------------------
 
 
-def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, random_state: int | None = None) -> Tuple[pd.Series, pd.DataFrame]:
+def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, random_state: Union[int, None] = None) -> Tuple[pd.Series, pd.DataFrame]:
     """
     Resample returns from multivariate normal with data inputs
     """
@@ -112,43 +115,47 @@ def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, rand
     return pd.DataFrame(sim, columns=mu_ret.index)
 
 
-def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int,  random_state: int, n_bootstrap: int = 100) -> Tuple[Dict[str, float], float, float]:
+def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int, random_state: int, n_bootstrap: int = 100, n_points: int = 25) -> Tuple[Dict[str, float], float, float]:
     """
-    Resampling optimiser for Optimal Portfolio with Markowitz.
+    Resampling optimiser as Michaud paper.
     """
 
     tickers: List[str] = list(cov_ret.columns)
     num_assets: int = len(tickers)
-
-    all_weights: np.ndarray = np.zeros((n_bootstrap, num_assets))
+    all_weights = np.zeros((n_bootstrap, n_points, num_assets), dtype=float)
 
     for b in range(n_bootstrap):
 
-        bootstrap_df = resample_inputs(
-            mu_ret=mu_ret,
-            cov_ret=cov_ret,
-            n_draws=n_obs,
-            random_state=random_state + 5*b,
-        )
+        bootstrap_df: pd.DataFrame = resample_inputs(
+            mu_ret=mu_ret, cov_ret=cov_ret, n_draws=n_obs, random_state=random_state + 5 * b)
 
         mu_bootstrap: pd.Series = bootstrap_df.mean()
         cov_bootstrap: pd.DataFrame = bootstrap_df.cov()
 
-        w_dict, _, _ = markowitz_tangency_ptf(
-            mu_ret=mu_bootstrap,
-            cov_ret=cov_bootstrap
-        )
+        _, ws_b = compute_efficient_frontier(mu_rets=mu_bootstrap, cov_rets=cov_bootstrap, n_points=n_points,
+                                             only_efficient=True, sup_lim=mu_bootstrap.max())
 
-        all_weights[b, :] = [w_dict.get(t) for t in tickers]
+        all_weights[b, :, :] = ws_b
 
-    avg_weights: np.ndarray = all_weights.mean(axis=0)
+    avg_weights_frontier = all_weights.mean(axis=0)
+    mu_vec = mu_ret.values.astype(float)
+    Sigma = cov_ret.values.astype(float)
+    rets = avg_weights_frontier @ mu_vec  # (m,)
+    vols = np.sqrt(np.einsum("ij,jk,ik->i", avg_weights_frontier, Sigma, avg_weights_frontier)
+                   )
+
+    sharpe = rets / vols
+    idx_best = int(np.nanargmax(sharpe))
+
+    w_star = avg_weights_frontier[idx_best, :]
+    resampled_ret: float = float(rets[idx_best])
+    resampled_vol: float = float(vols[idx_best])
 
     avg_weights_dict: Dict[str, float] = {
-        ticker: float(w) for ticker, w in zip(tickers, avg_weights)
+        ticker: float(w) for ticker, w in zip(tickers, w_star)
     }
 
-    w_vec = avg_weights
-    resampled_ret: float = float(w_vec @ mu_ret)
-    resampled_vol: float = float(np.sqrt(w_vec@cov_ret@w_vec))
-
     return avg_weights_dict, resampled_ret, resampled_vol
+
+# Constrained Portfolio Optimizer
+# -------------------------------

@@ -109,8 +109,7 @@ def print_window_results(end: int, date: pd.Timestamp, rf_m: float, oos_results:
         last_oos: float = oos_results[name][-1]
         excess_oos: float = last_oos - rf_m
 
-        print(f"[{name}] | Expected Return: {r_m:.2f} | Expected Vol: {vol_m:.2f} | Expected Excess: {excess_m:.2f} | \
-               OOS Return: {last_oos:.2f} | OOS Excess: {excess_oos: .2f}")
+        print(f"[{name}] | Expected Return: {r_m:.4f} | Expected Vol: {vol_m:.4f} | Expected Excess: {excess_m:.4f} | OOS Return: {last_oos:.4f} | OOS Excess: {excess_oos: .4f}")
 
 # Performance Statistics Function
 # -------------------------------
