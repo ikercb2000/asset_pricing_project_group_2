@@ -46,6 +46,26 @@ def markowitz_optrisky_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
 
     return weights_dict, r_opt, vol_opt
 
+# 1/N Portfolio Optimiser
+# -----------------------
+
+
+def equally_weighted_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
+    """
+    Equally-weighted portfolio
+    """
+    tickers = list(mu_ret.index)
+    n = len(tickers)
+
+    w_vec = np.ones(n) / n
+
+    weights_dict = {t: float(w) for t, w in zip(tickers, w_vec)}
+
+    r = float(w_vec @ mu_ret)
+    vol = float(np.sqrt(w_vec @ cov_ret.values @ w_vec))
+
+    return weights_dict, r, vol
+
 # Markowitz Efficient Frontier Function
 # --------------------------------------
 
