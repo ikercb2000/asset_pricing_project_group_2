@@ -3,12 +3,10 @@
 
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-
+import matplotlib.pyplot as plt
 
 from joblib import Parallel, delayed
 from typing import List, Tuple, Dict, Union
-from IPython.display import Image, display
 from pathlib import Path
 
 # Project Modules
@@ -89,55 +87,67 @@ def portfolio_sampler(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_portfolios: 
 # Mean-Variance Plot
 # ------------------
 
-def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05,
-            highlight_ptf: plot_ptf = None, ef_pairs: Union[np.ndarray, None] = None) -> None:
+def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05, highlight_ptf: Dict[str, plot_ptf] = None,
+            ef_pairs: Union[np.ndarray, None] = None) -> None:
     """
-    Plot Mean-Variance Frontier Graph with optional highlight portfolios
-    and an optional efficient frontier line.
+    Plot Mean-Variance Frontier Graph
     """
-    mv_pairs: np.ndarray = np.array(mv_pairs)
+    mv_pairs = np.asarray(mv_pairs, dtype=float)
+    vols = np.sqrt(mv_pairs[:, 1])
+    rets = mv_pairs[:, 0]
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=mv_pairs[:, 1]**0.5, y=mv_pairs[:, 0],
-                             marker=dict(color=(mv_pairs[:, 0] - rf) /
-                                         (mv_pairs[:, 1]**0.5),
-                                         showscale=True,
-                                         size=7,
-                                         line=dict(width=1),
-                                         colorscale="RdBu",
-                                         colorbar=dict(
-                                             title="Sharpe<br>Ratio", x=1.07),
-                                         ), mode='markers', name="Random Portfolios"))
+    sharpe = np.zeros_like(rets)
+    nonzero = vols > 0
+    sharpe[nonzero] = (rets[nonzero] - rf) / vols[nonzero]
+
+    fig, ax = plt.subplots(figsize=(8.5, 5))
+
+    sc = ax.scatter(vols, rets, c=sharpe, cmap="RdBu", s=30,
+                    edgecolors="black", linewidths=0.5)
+
+    cbar = fig.colorbar(sc, ax=ax, pad=0.02)
+    cbar.set_label("Sharpe Ratio", rotation=90)
 
     if ef_pairs is not None:
-
-        ef_pairs: np.ndarray = np.asarray(ef_pairs)
-        ef_vol: float = np.sqrt(ef_pairs[:, 1])
-        ef_ret: float = ef_pairs[:, 0]
-
-        fig.add_trace(go.Scatter(x=ef_vol, y=ef_ret, mode="lines",
-                      line=dict(width=3), name="Efficient Frontier",))
+        ef_pairs = np.asarray(ef_pairs, dtype=float)
+        ef_vol = np.sqrt(ef_pairs[:, 1])
+        ef_ret = ef_pairs[:, 0]
+        ax.plot(ef_vol, ef_ret, linewidth=2.5, label="Efficient Frontier")
 
     if highlight_ptf:
-
         for name, info in highlight_ptf.items():
             mv_pair: Tuple[float, float] = info.mv_pair
             color: str = info.color
-            ret: float = float(mv_pair[0])
-            vol: float = float(mv_pair[1])**0.5
+            ret_h = float(mv_pair[0])
+            vol_h = float(mv_pair[1]) ** 0.5
 
-            fig.add_trace(go.Scatter(x=[vol], y=[ret], mode="markers+text", marker=dict(color=color, size=12, symbol="x"),
-                                     text=[name], textposition="top center", name=name))
+            ax.scatter([vol_h], [ret_h], marker="x", s=80,
+                       color=color, label=name, zorder=5)
+            ax.text(vol_h, ret_h, f" {name}", color=color,
+                    fontsize=9, ha="left", va="bottom")
 
-    fig.update_layout(template='plotly_white', xaxis=dict(title='Monthly Risk (Volatility)'), yaxis=dict(title='Monthly Return'),
-                      title='Sample of Random Portfolios', width=850, height=500,
-                      legend=dict(x=0.98, y=0.02, xanchor="right", yanchor="bottom", bgcolor="rgba(255,255,255,0.7)",
-                                  bordercolor="rgba(0,0,0,0.2)", borderwidth=1, font=dict(size=10), itemsizing="trace"))
+    ax.set_xlabel("Monthly Risk (Volatility)")
+    ax.set_ylabel("Monthly Return")
+    ax.set_title("Sample of Random Portfolios")
 
-    fig.write_image(save_path, scale=2)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        legend = ax.legend(loc="lower right", frameon=True, framealpha=0.7,
+                           facecolor="white", edgecolor="black", fontsize=9)
+        legend.get_frame().set_linewidth(0.8)
+
+    fig.tight_layout()
+    save_path = str(Path(save_path))
+    fig.savefig(save_path, dpi=150)
 
     if show_plot:
-        display(Image(filename=save_path))
+        plt.show()
+    else:
+        plt.close(fig)
 
 # Plot Window MV Function
 # -----------------------
@@ -165,19 +175,17 @@ def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], 
 # --------------------
 
 
-def do_plot_batch(end, date, mv_plot_dir: str, show_plots, rf: float, mu_w: Union[np.ndarray, pd.Series],
+def do_plot_batch(end, date, mv_plot_dir, show_plots, rf: float, mu_w: Union[np.ndarray, pd.Series],
                   cov_w: Union[np.ndarray, pd.DataFrame], n_ptfs: int, min_assets: int, max_assets: int,
                   random_state: int, window_mv_data) -> None:
     """
     Plots for batch and executes in parallel inside each thread
     """
+
     mv_pairs_t, _, _ = portfolio_sampler(mu_rets=mu_w, cov_rets=cov_w, n_portfolios=n_ptfs, min_assets=min_assets,
                                          max_assets=max_assets, random_state=random_state)
 
     eff_front, _ = compute_efficient_frontier(mu_w, cov_w, n_ptfs)
-
-    mv_plot_dir = Path(mv_plot_dir)
-    mv_plot_dir.mkdir(parents=True, exist_ok=True)
 
     plot_window_mv(end, date, mv_plot_dir, show_plots, rf,
                    mv_pairs_t, eff_front, window_mv_data)

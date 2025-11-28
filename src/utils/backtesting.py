@@ -163,17 +163,11 @@ def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, 
     plot_pbar = None
     if do_plots:
         total_plots = len(returns) - window
-        plot_pbar = tqdm(total=total_plots, desc="Saved Plots", unit="plot")
 
     for end in tqdm(range(window, len(returns)), desc="Simulated Batches", unit="batch"):
 
         processed: Union[Tuple[pd.Timestamp, pd.DataFrame, pd.Series, pd.Series,
                          pd.DataFrame, int], None] = process_window(returns, end, window, min_assets)
-
-        if processed is None:
-            if do_plots and plot_pbar:
-                plot_pbar.update(1)
-            continue
 
         date, _, test_row, mu_w, cov_w, n_obs = processed
         oos_dates.append(date)
@@ -188,13 +182,8 @@ def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, 
             futures.append(executor.submit(do_plot_batch, end, date, mv_plot_dir, show_plots,
                            rf, mu_w, cov_w, n_ptfs, min_assets, max_assets, random_state, window_mv_data))
 
-            plot_pbar.update(1)
-
-    for f in futures:
+    for f in tqdm(futures, desc="Saved Plots"):
         f.result()
-
-    if do_plots and plot_pbar:
-        plot_pbar.close()
 
     oos_df: pd.DataFrame = pd.DataFrame(oos_results, index=oos_dates)
     stats_df: pd.DataFrame = performance_stats(rf, oos_df, frequency)

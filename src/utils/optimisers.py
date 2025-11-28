@@ -3,6 +3,7 @@
 
 import numpy as np
 import pandas as pd
+import scipy.optimize as opt
 
 from typing import Tuple, Dict, List, Union
 
@@ -13,7 +14,7 @@ from typing import Tuple, Dict, List, Union
 
 def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
     """
-    Portfolio Variance calculator
+    Portfolio Variance Objective Function
     """
 
     return np.dot(weights.T, np.dot(cov_ret, weights))
@@ -21,7 +22,7 @@ def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
 
 # Change name to optimal risky ptf
 
-def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
+def markowitz_optrisky_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
     """
     Markowitz Quadratic Optimization Problem Tangency Portfolio
     """
@@ -50,7 +51,7 @@ def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
 
 
 def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_points: int = 100, only_efficient: bool = False,
-                               sup_lim: float = 0.2, inf_lim: float = -0.1) -> Tuple[np.ndarray, np.ndarray]:
+                               sup_lim: float = 0.1, inf_lim: float = -0.1) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the efficient frontier returning the mv pairs
     """
@@ -62,10 +63,10 @@ def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_poi
 
     ones: np.ndarray = np.ones_like(mu)
 
-    A: np.ndarray = ones @ inv_cov @ ones
-    B: np.ndarray = ones @ inv_cov @ mu
-    C: np.ndarray = mu  @ inv_cov @ mu
-    D: np.ndarray = A * C - B**2
+    A: np.ndarray = (ones @ inv_cov @ ones)
+    B: np.ndarray = (ones @ inv_cov @ mu)
+    C: np.ndarray = (mu  @ inv_cov @ mu)
+    D: np.ndarray = (A * C - B**2)
 
     if D <= 0:
         raise ValueError("Covariance matrix and mean vector lead to non-positive D; "
@@ -140,7 +141,7 @@ def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int, r
     avg_weights_frontier = all_weights.mean(axis=0)
     mu_vec = mu_ret.values.astype(float)
     Sigma = cov_ret.values.astype(float)
-    rets = avg_weights_frontier @ mu_vec  # (m,)
+    rets = (avg_weights_frontier @ mu_vec)
     vols = np.sqrt(np.einsum("ij,jk,ik->i", avg_weights_frontier, Sigma, avg_weights_frontier)
                    )
 
@@ -152,10 +153,44 @@ def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int, r
     resampled_vol: float = float(vols[idx_best])
 
     avg_weights_dict: Dict[str, float] = {
-        ticker: float(w) for ticker, w in zip(tickers, w_star)
+        ticker: w for ticker, w in zip(tickers, w_star)
     }
 
     return avg_weights_dict, resampled_ret, resampled_vol
 
 # Constrained Portfolio Optimizer
 # -------------------------------
+
+
+def constrained_markowitz_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, max_weight: float = 0.1) -> Tuple[Dict[str, float], float, float]:
+    """
+    Constrained minimum-variance portfolio with following restrictions:
+    - fully invested (sum w_i = 1)
+    - no short-selling (w_i >= 0)
+    - max_weight cap on each asset (w_i <= max_weight)
+    """
+    tickers: List[str] = list(cov_ret.columns)
+    num_assets: int = len(tickers)
+    mu_vec: pd.Series = mu_ret.values
+    cov_mat: pd.DataFrame = cov_ret.values
+
+    constraints = (
+        {"type": "eq", "fun": lambda w: np.sum(w) - 1.0},
+    )
+    bounds = [(0.0, max_weight)] * num_assets
+
+    x0 = np.repeat(1.0/num_assets, num_assets)
+    res = opt.minimize(calculate_var, x0, cov_mat, method="SLSQP",
+                       bounds=bounds, constraints=constraints)
+
+    if not res.success:
+        raise RuntimeError(f"Constrained optimisation failed: {res.message}")
+
+    w_opt = res.x
+    weights_dict: Dict[str, float] = {
+        ticker: float(weight) for ticker, weight in zip(tickers, w_opt)
+    }
+    r_opt: float = float(w_opt @ mu_vec)
+    vol_opt: float = float(np.sqrt(w_opt @ cov_mat @ w_opt))
+
+    return weights_dict, r_opt, vol_opt
