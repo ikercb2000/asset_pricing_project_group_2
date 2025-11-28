@@ -4,7 +4,7 @@
 import numpy as np
 import pandas as pd
 
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 
 # Project Modules
 # ---------------
@@ -31,15 +31,15 @@ def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
     Markowitz Quadratic Optimization Problem Tangency Portfolio
     """
 
-    tickers = list(cov_ret.columns)
+    tickers: List[str] = list(cov_ret.columns)
     num_assets: int = len(tickers)
 
-    Sigma_inv = np.linalg.inv(cov_ret)
-    ones = np.ones(num_assets)
+    Sigma_inv: np.ndarray = np.linalg.inv(cov_ret)
+    ones: np.ndarray = np.ones(num_assets)
 
-    w_unnorm = (Sigma_inv @ mu_ret)
-    denom = (ones @ w_unnorm)
-    w = w_unnorm / denom
+    w_unnorm: np.ndarray = (Sigma_inv @ mu_ret)
+    denom: np.ndarray = (ones @ w_unnorm)
+    w: np.ndarray = w_unnorm / denom
 
     weights_dict: Dict[str, float] = {
         ticker: float(weight) for ticker, weight in zip(tickers, w)
@@ -56,39 +56,42 @@ def markowitz_tangency_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Di
 
 def compute_efficient_frontier(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_points: int = 100, only_efficient: bool = False,
                                sup_lim: float = 0.2, inf_lim: float = -0.1) -> np.ndarray:
+    """
+    Computes the efficient frontier returning the mv pairs
+    """
 
-    mu = np.asarray(mu_rets.values, dtype=float).reshape(-1)
-    cov = np.asarray(cov_rets.values, dtype=float)
+    mu: np.ndarray = np.asarray(mu_rets.values, dtype=float).reshape(-1)
+    cov: np.ndarray = np.asarray(cov_rets.values, dtype=float)
 
-    inv_cov = np.linalg.pinv(cov)
+    inv_cov: np.ndarray = np.linalg.pinv(cov)
 
-    ones = np.ones_like(mu)
+    ones: np.ndarray = np.ones_like(mu)
 
-    A = ones @ inv_cov @ ones
-    B = ones @ inv_cov @ mu
-    C = mu  @ inv_cov @ mu
-    D = A * C - B**2
+    A: np.ndarray = ones @ inv_cov @ ones
+    B: np.ndarray = ones @ inv_cov @ mu
+    C: np.ndarray = mu  @ inv_cov @ mu
+    D: np.ndarray = A * C - B**2
 
     if D <= 0:
         raise ValueError("Covariance matrix and mean vector lead to non-positive D; "
                          "efficient frontier not well-defined.")
 
-    mu_gmv = B / A
-    var_gmv = 1.0 / A
+    mu_gmv: np.ndarray = B / A
+    var_gmv: np.ndarray = 1.0 / A
 
     if only_efficient:
-        # Upper branch (efficient set): returns >= mu_gmv
-        ret_min = float(mu_gmv)
-        ret_max = sup_lim
+        ret_min: float = float(mu_gmv)
+        ret_max: float = sup_lim
     else:
-        # Full hyperbola (includes inefficient lower branch)
-        ret_min = inf_lim
-        ret_max = sup_lim
+        # Full hyperbola
+        ret_min: float = inf_lim
+        ret_max: float = sup_lim
 
-    target_rets = np.linspace(ret_min, ret_max, n_points)
-    target_vars = (A * target_rets**2 - 2 * B * target_rets + C) / D
+    target_rets: np.ndarray = np.linspace(ret_min, ret_max, n_points)
+    target_vars: np.ndarray = (
+        A * target_rets**2 - 2 * B * target_rets + C) / D
 
-    ef_pairs = np.column_stack([target_rets, target_vars])
+    ef_pairs: np.ndarray = np.column_stack([target_rets, target_vars])
     return ef_pairs
 
 
@@ -103,11 +106,8 @@ def resample_inputs(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_draws: int, rand
 
     rng = np.random.default_rng(random_state)
 
-    sim = rng.multivariate_normal(
-        mean=mu_ret.values,
-        cov=cov_ret.values,
-        size=n_draws
-    )
+    sim: np.ndarray = rng.multivariate_normal(
+        mean=mu_ret.values, cov=cov_ret.values, size=n_draws)
 
     return pd.DataFrame(sim, columns=mu_ret.index)
 
@@ -117,10 +117,10 @@ def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int,  
     Resampling optimiser for Optimal Portfolio with Markowitz.
     """
 
-    tickers = list(cov_ret.columns)
+    tickers: List[str] = list(cov_ret.columns)
     num_assets: int = len(tickers)
 
-    all_weights = np.zeros((n_bootstrap, num_assets))
+    all_weights: np.ndarray = np.zeros((n_bootstrap, num_assets))
 
     for b in range(n_bootstrap):
 
@@ -141,7 +141,7 @@ def resampling_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int,  
 
         all_weights[b, :] = [w_dict.get(t) for t in tickers]
 
-    avg_weights = all_weights.mean(axis=0)
+    avg_weights: np.ndarray = all_weights.mean(axis=0)
 
     avg_weights_dict: Dict[str, float] = {
         ticker: float(w) for ticker, w in zip(tickers, avg_weights)
