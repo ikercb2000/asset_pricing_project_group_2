@@ -6,13 +6,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from joblib import Parallel, delayed
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union, Any
 from pathlib import Path
 
 # Project Modules
 # ---------------
 
 from utils.types import plot_ptf
+from utils.helpers import generate_asset_colors
 from utils.optimisers import compute_efficient_frontier
 
 # Random Weights Function
@@ -189,3 +190,75 @@ def do_plot_batch(end, date, mv_plot_dir, show_plots, rf: float, mu_w: Union[np.
 
     plot_window_mv(end, date, mv_plot_dir, show_plots, rf,
                    mv_pairs_t, eff_front, window_mv_data)
+
+# Allocation Plot Function
+# ------------------------
+
+
+def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp, save_dir: str | Path,
+                          show_plot: bool = False, asset_colors: Dict[str, Any] | None = None) -> None:
+    """
+    Plot of the allocation for each asset in a portfolio with a clean legend.
+    asset_colors: dict global asset -> color (precomputed once for speed).
+    """
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    assets = list(weights_df.index)
+    portfolios = list(weights_df.columns)
+
+    n_ptf = len(portfolios)
+    x = np.arange(1, n_ptf + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    bottoms = np.zeros(n_ptf, dtype=float)
+    weights_pct = weights_df.values * 100.0
+
+    if asset_colors is None:
+        asset_colors = generate_asset_colors(assets)
+
+    for i, asset in enumerate(assets):
+        w = weights_pct[i, :]
+        color = asset_colors.get(asset, None)
+        ax.bar(
+            x,
+            w,
+            bottom=bottoms,
+            label=asset,
+            color=color,
+        )
+        bottoms += w
+
+    ax.set_ylim(0, 100)
+    ax.set_xlim(0.5, n_ptf + 0.5)
+    ax.set_xticks(x)
+    ax.set_xticklabels(portfolios, rotation=45, ha="right")
+    ax.set_xlabel("Portfolio Method")
+    ax.set_ylabel("Allocation (%)")
+    ax.set_title(f"Portfolio Allocations | {date}")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    n_assets = len(assets)
+    ncols = 1 if n_assets <= 12 else 2 if n_assets <= 24 else 3
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.01, 0.5),
+        fontsize=8,
+        frameon=True,
+        ncol=ncols,
+        title="Assets",
+        title_fontsize=9,
+    )
+
+    fig.tight_layout(rect=[0, 0, 0.82, 1])
+
+    date_str = str(date).replace(" ", "-")
+    fname = save_dir / f"alloc_{end:04d}_{date_str}.png"
+    fig.savefig(fname, dpi=150)
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
