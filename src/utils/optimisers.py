@@ -214,3 +214,62 @@ def constrained_markowitz_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, ma
     vol_opt: float = float(np.sqrt(w_opt @ cov_mat @ w_opt))
 
     return weights_dict, r_opt, vol_opt
+
+# Shrinkage Portfolio Functions
+# -----------------------------
+
+
+def _constant_correlation_target(cov_ret: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ledoit–Wolf constant-correlation target matrix F.
+    """
+    s = cov_ret.values.astype(float)
+    k = s.shape[0]
+    std = np.sqrt(np.diag(s))
+    outer_std = np.outer(std, std)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = s / outer_std
+
+    np.fill_diagonal(corr, 0.0)
+    r_bar = corr.sum() / (k * (k - 1))
+    F = r_bar * outer_std
+    np.fill_diagonal(F, np.diag(s))
+
+    return pd.DataFrame(F, index=cov_ret.index, columns=cov_ret.columns)
+
+
+def shrinkage_markowitz_optimiser(mu_ret: pd.Series, cov_ret: pd.DataFrame, n_obs: int, shrinkage: float | None = None) -> Tuple[Dict[str, float], float, float]:
+    """
+    Markowitz tangency portfolio using a Ledoit–Wolf-style shrinkage
+    of the covariance matrix toward the constant-correlation target.
+    """
+
+    tickers: List[str] = list(cov_ret.columns)
+    k: int = len(tickers)
+
+    F = _constant_correlation_target(cov_ret)
+    if shrinkage is None:
+        shrinkage = k / (k + float(n_obs))
+    shrinkage = float(np.clip(shrinkage, 0.0, 1.0))
+
+    S = cov_ret.values.astype(float)
+    Fv = F.values.astype(float)
+    Sigma_shrink = shrinkage * Fv + (1.0 - shrinkage) * S
+
+    mu_vec = mu_ret.values.astype(float)
+    Sigma_inv = np.linalg.inv(Sigma_shrink)
+    ones = np.ones(k)
+
+    w_unnorm = Sigma_inv @ mu_vec
+    denom = float(ones @ w_unnorm)
+    w = w_unnorm / denom
+
+    weights_dict: Dict[str, float] = {
+        ticker: float(weight) for ticker, weight in zip(tickers, w)
+    }
+
+    r_opt: float = float(w @ mu_vec)
+    vol_opt: float = float(np.sqrt(w @ Sigma_shrink @ w))
+
+    return weights_dict, r_opt, vol_opt
