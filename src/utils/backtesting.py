@@ -144,17 +144,10 @@ def performance_stats(rf_m: Union[float, pd.Series], oos_df: pd.DataFrame,
         excess_m: float = excess.mean()
         sharpe_m: float = excess_m / vol_m if vol_m > 0 else np.nan
 
-        mean_ann: float = (1 + mean_m) ** frequency.value - 1
-        vol_ann: float = vol_m * (frequency.value ** 0.5)
-        sharpe_ann: float = sharpe_m * (frequency.value ** 0.5)
-
         stats[method] = {
             "mean_monthly": mean_m,
             "vol_monthly": vol_m,
             "sharpe_monthly": sharpe_m,
-            "ann_return": mean_ann,
-            "ann_volatility": vol_ann,
-            "ann_sharpe": sharpe_ann,
         }
 
     return pd.DataFrame(stats).T

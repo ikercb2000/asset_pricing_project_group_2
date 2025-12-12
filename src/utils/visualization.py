@@ -167,6 +167,7 @@ def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], 
         )
 
     date_str: str = str(date).replace(" ", "-")
+    date_str = date_str.replace(":", "-")
     fname = Path(mv_plot_dir, f"mv_oos_{end:04d}_{date_str}.png")
 
     mv_plot(mv_pairs=global_mv_pairs, save_path=str(
