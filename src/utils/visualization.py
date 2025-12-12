@@ -88,7 +88,7 @@ def portfolio_sampler(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_portfolios: 
 # Mean-Variance Plot
 # ------------------
 
-def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True, rf: float = 0.05, highlight_ptf: Dict[str, plot_ptf] = None,
+def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, show_plot: bool = True, rf: float = 0.05, highlight_ptf: Dict[str, plot_ptf] = None,
             ef_pairs: Union[np.ndarray, None] = None) -> None:
     """
     Plot Mean-Variance Frontier Graph
@@ -129,7 +129,8 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, show_plot: bool = True,
 
     ax.set_xlabel("Monthly Risk (Volatility)")
     ax.set_ylabel("Monthly Return")
-    ax.set_title("Sample of Random Portfolios")
+    date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
+    ax.set_title(f"Sample of Random Portfolios | {date_str}")
 
     ax.grid(True, linestyle="--", alpha=0.3)
     ax.set_facecolor("white")
@@ -162,16 +163,15 @@ def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], 
 
     for i, (m_name, (r_m, vol_m)) in enumerate(window_mv_data.items()):
         highlights[m_name] = plot_ptf(
-            mv_pair=(r_m, vol_m**2),   # mensual
+            mv_pair=(r_m, vol_m**2),
             color=colors[i % len(colors)],
         )
 
-    date_str: str = str(date).replace(" ", "-")
-    date_str = date_str.replace(":", "-")
+    date_str = date.strftime("%Y-%m-%d")
     fname = Path(mv_plot_dir, f"mv_oos_{end:04d}_{date_str}.png")
 
-    mv_plot(mv_pairs=global_mv_pairs, save_path=str(
-        fname), show_plot=show_plots, rf=rf, highlight_ptf=highlights, ef_pairs=eff_front)
+    mv_plot(mv_pairs=global_mv_pairs, save_path=str(fname), date=date,
+            show_plot=show_plots, rf=rf, highlight_ptf=highlights, ef_pairs=eff_front)
 
 # Batch Ploto Function
 # --------------------
@@ -238,7 +238,8 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
     ax.set_xticklabels(portfolios, rotation=45, ha="right")
     ax.set_xlabel("Portfolio Method")
     ax.set_ylabel("Allocation (%)")
-    ax.set_title(f"Portfolio Allocations | {date}")
+    date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
+    ax.set_title(f"Portfolio Allocations | {date_str}")
     ax.grid(axis="y", linestyle="--", alpha=0.3)
 
     n_assets = len(assets)
@@ -255,8 +256,7 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
 
     fig.tight_layout(rect=[0, 0, 0.82, 1])
 
-    date_str = str(date).replace(" ", "-")
-    date_str = date_str.replace(":", "-")
+    date_str = date.strftime("%Y-%m-%d")
     fname = save_dir / f"alloc_{end:04d}_{date_str}.png"
     fig.savefig(fname, dpi=150)
 
