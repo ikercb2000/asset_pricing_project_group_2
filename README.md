@@ -41,6 +41,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4) Open the main notebook "main.ipynb" and execute each cell in order to see the outputs and estimate the different quantities and results. An explanation of the outputs and others is given for mostly each cell.
+4) Open the main notebook "main.ipynb" and select the kernel of the Python environment we have just created. Explore the options for "Python Environments" until you find the ".venv" Python environment. Once the kernel is selected, execute each cell in order to see the outputs and estimate the different quantities and results. An explanation of the outputs and others is given for mostly each cell.
 
-We have included extra results which are not needed for the project but that give an overview of the analysis we have done in order to present the results in the report.
+We have included extra results which are not needed for the project but that give an overview of the analysis we have done in order to present the results in the report. This are part of the appendix.
