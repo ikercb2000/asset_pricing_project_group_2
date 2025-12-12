@@ -123,48 +123,56 @@ def print_window_results(end: int, date: pd.Timestamp, rf_m: float,
 # Performance Statistics Function
 # -------------------------------
 
-def performance_stats(rf_ann: float, oos_df: pd.DataFrame,
+def performance_stats(rf_m: Union[float, pd.Series], oos_df: pd.DataFrame,
                       frequency: FreqPrices) -> pd.DataFrame:
     """
     Prints the performance stats of our results
     """
-    rf_m: float = (1 + rf_ann)**(1/frequency.value) - 1
+    if isinstance(rf_m, (int, float)):
+        rf_m = pd.Series(float(rf_m), index=oos_df.index)
+
     stats: Dict[str, Dict[str, float]] = {}
 
     for method in oos_df.columns:
         r = oos_df[method].dropna()
+        rf_aligned = rf_m.reindex(r.index)
+        excess = r - rf_aligned
 
         mean_m: float = r.mean()
         vol_m: float = r.std(ddof=1)
 
-        excess_m: float = mean_m - rf_m
-        sharpe_m: Union[float, None] = excess_m / \
-            vol_m if vol_m > 0 else np.nan
+        excess_m: float = excess.mean()
+        sharpe_m: float = excess_m / vol_m if vol_m > 0 else np.nan
+
+        mean_ann: float = (1 + mean_m) ** frequency.value - 1
+        vol_ann: float = vol_m * (frequency.value ** 0.5)
+        sharpe_ann: float = sharpe_m * (frequency.value ** 0.5)
 
         stats[method] = {
             "mean_monthly": mean_m,
             "vol_monthly": vol_m,
-            "sharpe_monthly": sharpe_m
+            "sharpe_monthly": sharpe_m,
+            "ann_return": mean_ann,
+            "ann_volatility": vol_ann,
+            "ann_sharpe": sharpe_ann,
         }
 
     return pd.DataFrame(stats).T
 
-
 # OOS Running Pipeline Function
 # -----------------------------
 
+
 def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, methods: Dict[str, OptimFunc],
                      mv_plot_dir: str | Path, show_plots=False, do_plots=False, print_res=False, n_ptfs=3000,
-                     min_assets=1, max_assets=None, random_state=123, rf=0.0, alloc_plot_dir=None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                     min_assets=1, max_assets=None, random_state=123, rf_series: pd.Series | None = None, alloc_plot_dir=None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Run Out-of-Sample Backtest for the different methods and windows of data and create plots.
     """
 
-    rf_m: float = (1 + rf)**(1 / frequency.value) - 1
-
     oos_dates: List[pd.Timestamp] = []
     oos_results: Dict[str, List[Any]] = {name: [] for name in methods.keys()}
-
+    rf_m_list: List[float] = []
     executor = ThreadPoolExecutor(max_workers=4)
     futures: List[Any] = []
 
@@ -172,6 +180,9 @@ def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, 
     if alloc_plot_dir is not None:
         all_assets = list(returns.columns)
         asset_colors = generate_asset_colors(all_assets)
+
+    if rf_series is not None:
+        rf_series = rf_series.astype(float).sort_index()
 
     for end in tqdm(range(window, len(returns)), desc="Simulated Batches", unit="batch"):
 
@@ -187,23 +198,19 @@ def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, 
         date, _, test_row, mu_w, cov_w, n_obs = processed
         oos_dates.append(date)
 
+        rf_m_t = float(rf_series.asof(date))
+        rf_m_list.append(rf_m_t)
+
         window_mv_data, window_weights = oos_results_per_method(
-            oos_results=oos_results,
-            methods=methods,
-            mu_w=mu_w,
-            test_row=test_row,
-            cov_w=cov_w,
-            n_obs=n_obs,
-        )
+            oos_results=oos_results, methods=methods, mu_w=mu_w, test_row=test_row, cov_w=cov_w, n_obs=n_obs)
 
         if print_res:
-            print_window_results(end, date, rf_m, oos_results, window_mv_data)
+            print_window_results(
+                end, date, rf_m_t, oos_results, window_mv_data)
 
         if do_plots:
-            futures.append(executor.submit(
-                do_plot_batch, end, date, mv_plot_dir, show_plots, rf,
-                mu_w, cov_w, n_ptfs, min_assets, max_assets, random_state, window_mv_data
-            ))
+            futures.append(
+                executor.submit(do_plot_batch, end, date, mv_plot_dir, show_plots, rf_m_t, mu_w, cov_w, n_ptfs, min_assets, max_assets, random_state, window_mv_data))
 
         if alloc_plot_dir is not None:
             weights_df = pd.DataFrame(window_weights)
@@ -214,6 +221,8 @@ def run_oos_backtest(returns: pd.DataFrame, frequency: FreqPrices, window: int, 
         f.result()
 
     oos_df: pd.DataFrame = pd.DataFrame(oos_results, index=oos_dates)
-    stats_df: pd.DataFrame = performance_stats(rf, oos_df, frequency)
+    rf_m_series = pd.Series(rf_m_list, index=oos_dates)
+
+    stats_df: pd.DataFrame = performance_stats(rf_m_series, oos_df, frequency)
 
     return oos_df, stats_df

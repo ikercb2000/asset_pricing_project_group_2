@@ -255,6 +255,7 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
     fig.tight_layout(rect=[0, 0, 0.82, 1])
 
     date_str = str(date).replace(" ", "-")
+    date_str = date_str.replace(":", "-")
     fname = save_dir / f"alloc_{end:04d}_{date_str}.png"
     fig.savefig(fname, dpi=150)
 
