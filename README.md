@@ -4,7 +4,7 @@
 
 This is the repository containing the PDF report and the source codes for Group's 2 Asset Pricing & Risk module Final Project on Markowitz' portfolio optimization problem and related techniques. This project spex cifically explores optimal portfolio construction using Dow Jones 300 stocks time series data and how the estimation error of the mean-variance optimizer leads to substantial losses in performance for optimal portfolios. We try different alternative portfolio optimisation techniques that would lead to different optimal portfolios, and we analise both behaviour and performance.
 
-![Efficient Frontier Example](plots/optimal_ptfs/optimal_ptfs_evolution.gif)
+![Efficient Frontier Example](optimal_ptfs_evolution.gif)
 
 ### Instructions for Usage
 
