@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 def generate_asset_colors(all_assets):
     """
     Generate a unique color for each asset from a fixed palette.
-    Call this ONCE (e.g. before the backtest loop) and reuse.
     """
     # Combine several categorical colormaps
     base_cmaps = [

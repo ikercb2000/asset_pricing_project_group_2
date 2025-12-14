@@ -14,6 +14,9 @@ from IPython.display import display
 from sklearn.decomposition import PCA
 from statsmodels.tsa.stattools import adfuller
 
+# Data Analysis Class
+# -------------------
+
 
 class DataAnalysisPlots:
 

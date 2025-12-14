@@ -20,11 +20,10 @@ def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
     return np.dot(weights.T, np.dot(cov_ret, weights))
 
 
-# Change name to optimal risky ptf
-
+# out of sample
 def markowitz_optrisky_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
     """
-    Markowitz quadratic optimization problem tangency portfolio.
+    Markowitz quadratic optimization problem tangency portfolio OOS.
     """
 
     tickers: List[str] = list(cov_ret.columns)
