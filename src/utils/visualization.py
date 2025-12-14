@@ -42,6 +42,9 @@ def random_w_leverage(k: int, net_exposure: float = 1.0, gross_limit: float = 2.
 def sample_one(mu_arr: pd.Series, cov_arr: pd.DataFrame, tickers: List[str], n_assets_total: int,
                min_assets: int, max_assets: int, net_exposure: float, gross_limit: float,
                rng_seed: int) -> Tuple[float, List[float], List[str]]:
+    """
+    Generate a single randomly sampled portfolio and compute its return and variance.
+    """
 
     rng = np.random.default_rng(rng_seed)
 
@@ -63,6 +66,9 @@ def sample_one(mu_arr: pd.Series, cov_arr: pd.DataFrame, tickers: List[str], n_a
 def portfolio_sampler(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_portfolios: int, min_assets: int = 1, max_assets: int = None,
                       random_state: int = 123, n_jobs: int = -1, net_exposure: float = 1.0,
                       gross_limit: float = 3.0) -> Tuple[List[Tuple[float, float]], List[float], List[str]]:
+    """
+    Sample different portfolios inside the mean-variance frontier.
+    """
 
     tickers: np.ndarray = np.array(cov_rets.columns)
     mu_arr: np.ndarray = mu_rets.values
@@ -158,6 +164,9 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, sho
 
 def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], show_plots: bool, global_mv_pairs, eff_front: np.ndarray,
                    window_mv_data: Dict[str, Tuple[float, float]]) -> None:
+    """
+    Plot and save the mean–variance representation for a single rolling-window period.
+    """
 
     highlights: Dict[str, plot_ptf] = {}
     colors: List[str] = ["green", "orange", "purple", "black", "red", "blue"]
@@ -201,7 +210,6 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
                           show_plot: bool = False, asset_colors: Dict[str, Any] | None = None) -> None:
     """
     Plot of the allocation for each asset in a portfolio with a clean legend.
-    asset_colors: dict global asset -> color (precomputed once for speed).
     """
 
     save_dir = Path(save_dir)
@@ -270,12 +278,7 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
 # ----------------------------
 
 
-def plot_cumulative_oos(
-    oos_df: pd.DataFrame,
-    save_path: str | Path,
-    show_plot: bool = False,
-    title: str = "Cumulative Out-of-Sample Performance (Excess Returns)",
-) -> None:
+def plot_cumulative_oos(oos_df: pd.DataFrame, save_path: str | Path, show_plot: bool = False, title: str = "Cumulative Out-of-Sample Performance (Excess Returns)") -> None:
     """
     Plot cumulative performance from returns.
     """
@@ -305,15 +308,8 @@ def plot_cumulative_oos(
 # ---------------------
 
 
-def mv_plot_on_axis(
-    ax: plt.Axes,
-    cax: plt.Axes | None,
-    mv_pairs: List[List[float]],
-    date: pd.Timestamp,
-    highlight_ptf: Dict[str, plot_ptf] | None = None,
-    ef_pairs: Union[np.ndarray, None] = None,
-    show_colorbar: bool = True,
-) -> None:
+def mv_plot_on_axis(ax: plt.Axes, cax: plt.Axes | None, mv_pairs: List[List[float]], date: pd.Timestamp, highlight_ptf: Dict[str, plot_ptf] | None = None,
+                    ef_pairs: Union[np.ndarray, None] = None, show_colorbar: bool = True) -> None:
     """
     Same visual logic as mv_plot, but draws on a provided axis (for grids).
     """
@@ -372,8 +368,7 @@ def mv_plot_on_axis(
 def plot_mv_grid(img_dir: str | Path, date_strs: Sequence[str], out_name: str = "mv_grid_vertical.png", figsize: tuple[float, float] | None = None,
                  title: str | None = None, show_plot: bool = False) -> Path:
     """
-    Build a vertical grid (N rows x 1 col) from already-generated images in img_dir,
-    selecting images that match the provided date strings (YYYY-MM-DD).
+    Build a vertical grid from already-generated images in img_dir, selecting images that match the provided date strings (YYYY-MM-DD).
     """
     img_dir = Path(img_dir)
 
@@ -431,7 +426,9 @@ def plot_mv_grid(img_dir: str | Path, date_strs: Sequence[str], out_name: str = 
 
 
 def plot_allocation_panel(ax, weights_df, asset_colors=None):
-
+    """
+    Plot a stacked bar chart of portfolio allocations on a given Axes object.
+    """
     assets = list(weights_df.index)
     portfolios = list(weights_df.columns)
     n_ptf = len(portfolios)
@@ -453,6 +450,9 @@ def plot_allocation_panel(ax, weights_df, asset_colors=None):
 
 def plot_alloc_grid(alloc_snapshots: dict, save_path: str | Path, asset_colors: dict | None = None,
                     suptitle: str = "Portfolio Allocations Across Selected Dates") -> None:
+    """
+    Create and save a grid of portfolio allocation panels across selected dates.
+    """
     dates = sorted(alloc_snapshots.keys())[:4]
     if len(dates) == 0:
         return

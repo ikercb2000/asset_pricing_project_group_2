@@ -16,12 +16,13 @@ from statsmodels.tsa.stattools import adfuller
 
 
 class DataAnalysisPlots:
+
     def __init__(self, returns: pd.DataFrame, base_dir: str | Path):
         self.returns = returns
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    # --------------- helpers -----------------
+    # helpers
 
     def _savefig(self, name: str) -> None:
         """
@@ -46,11 +47,11 @@ class DataAnalysisPlots:
         """
         return self.returns.columns[0] if self.returns.shape[1] == 1 else "ALL"
 
-    # --------------- universe-level plots -----------------
+    # universe-level plots
 
     def plot_boxplots_all_assets(self) -> None:
         """
-        Boxplots for the whole universe (saved in base_dir).
+        Boxplots for the whole universe.
         """
         plt.figure(figsize=(14, 4))
         self.returns.boxplot(rot=90)
@@ -61,7 +62,6 @@ class DataAnalysisPlots:
     def plot_corr_heatmap(self) -> None:
         """
         Correlation matrix for the whole universe.
-        This is the ONLY plot shown on screen.
         """
         plt.figure(figsize=(14, 6))
         sns.heatmap(self.returns.corr(), cmap="RdBu", center=0)
@@ -112,9 +112,12 @@ class DataAnalysisPlots:
         self._savefig("pca_cumulative_variance_all_assets")
         plt.close()
 
-    # --------------- per-asset plots -----------------
+    # per-asset plots
 
     def plot_boxplots_asset(self) -> None:
+        """
+        Boxplot of the distribution of returns per asset.
+        """
         tag = self._asset_tag()
         plt.figure(figsize=(10, 4))
         self.returns.boxplot(rot=0)
@@ -123,6 +126,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_return_distribution_asset(self, bins: int = 30) -> None:
+        """
+        Histogram/density of the distribution of returns per asset.
+        """
         tag = self._asset_tag()
         series = self.returns.iloc[:, 0].dropna()
 
@@ -134,6 +140,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_rolling_vol_asset(self, window: int = 24) -> None:
+        """
+        Rolling volatility of time series of returns per asset.
+        """
         tag = self._asset_tag()
         series = self.returns.iloc[:, 0]
         rolling_vol = series.rolling(window).std()
@@ -154,6 +163,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_rolling_sharpe_asset(self, window: int = 24) -> None:
+        """
+        Rolling Sharpe ratio of time series of returns per asset.
+        """
         tag = self._asset_tag()
         series = self.returns.iloc[:, 0]
 
@@ -175,6 +187,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_drawdowns_asset(self) -> None:
+        """
+        Rolling drawdowns of time series of returns per asset.
+        """
         tag = self._asset_tag()
         series = self.returns.iloc[:, 0]
 
@@ -195,6 +210,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_qq_asset(self) -> None:
+        """
+        Q-Q plot of the distribution of returns per asset.
+        """
         tag = self._asset_tag()
         series = self.returns.iloc[:, 0].dropna()
 
@@ -206,6 +224,9 @@ class DataAnalysisPlots:
         plt.close()
 
     def plot_grid_for_tickers(self, tickers: list[str], n_rows: int, n_cols: int, save_prefix: str, window: int = 24, bins: int = 30) -> None:
+        """
+        Grid of different types of plots for selected tickers (for report).
+        """
 
         plot_kinds = ["drawdowns", "volatility", "sharpe", "qq", "hist"]
 
@@ -254,7 +275,6 @@ class DataAnalysisPlots:
                 ax.set_title(tkr)
                 ax.grid(True, linestyle="--", alpha=0.3)
 
-            # Hide unused axes
             for ax in axes[len(tickers[: n_rows * n_cols]):]:
                 ax.axis("off")
 
@@ -265,7 +285,7 @@ class DataAnalysisPlots:
             fig.savefig(path, dpi=150, bbox_inches="tight")
             plt.close(fig)
 
-    # --------------- summary tables (all assets at once) -----------------
+    # summary tables (all assets at once)
 
     def print_adf_tests_all_assets(self) -> None:
         """
@@ -300,12 +320,11 @@ class DataAnalysisPlots:
         print("\n--- Descriptive statistics of monthly returns (all assets) ---")
         display(desc)
 
-    # --------------- loop per asset -----------------
+    # loop per asset
 
     def run_all_per_asset(self, window_vol: int = 24, window_sharpe: int = 24) -> None:
         """
         For each asset, create analysis_plots/<ASSET>/ and save all plots directly there.
-        No subfolders.
         """
         for col in self.returns.columns:
             asset_dir = self.base_dir / col

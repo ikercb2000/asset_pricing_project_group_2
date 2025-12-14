@@ -14,7 +14,7 @@ from typing import Tuple, Dict, List, Union
 
 def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
     """
-    Portfolio Variance Objective Function
+    Portfolio variance objective function.
     """
 
     return np.dot(weights.T, np.dot(cov_ret, weights))
@@ -24,7 +24,7 @@ def calculate_var(weights: pd.DataFrame, cov_ret: pd.DataFrame) -> np.ndarray:
 
 def markowitz_optrisky_ptf(mu_ret: pd.Series, cov_ret: pd.DataFrame) -> Tuple[Dict[str, float], float, float]:
     """
-    Markowitz Quadratic Optimization Problem Tangency Portfolio
+    Markowitz quadratic optimization problem tangency portfolio.
     """
 
     tickers: List[str] = list(cov_ret.columns)
