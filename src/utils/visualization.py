@@ -6,8 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from joblib import Parallel, delayed
-from typing import List, Tuple, Dict, Union, Any
+from typing import List, Tuple, Dict, Union, Any, Sequence
 from pathlib import Path
+from PIL import Image
 
 # Project Modules
 # ---------------
@@ -88,7 +89,7 @@ def portfolio_sampler(mu_rets: pd.Series, cov_rets: pd.DataFrame, n_portfolios: 
 # Mean-Variance Plot
 # ------------------
 
-def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, show_plot: bool = True, rf: float = 0.05, highlight_ptf: Dict[str, plot_ptf] = None,
+def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, show_plot: bool = True, highlight_ptf: Dict[str, plot_ptf] = None,
             ef_pairs: Union[np.ndarray, None] = None) -> None:
     """
     Plot Mean-Variance Frontier Graph
@@ -99,7 +100,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, sho
 
     sharpe = np.zeros_like(rets)
     nonzero = vols > 0
-    sharpe[nonzero] = (rets[nonzero] - rf) / vols[nonzero]
+    sharpe[nonzero] = rets[nonzero] / vols[nonzero]
 
     fig, ax = plt.subplots(figsize=(8.5, 5))
 
@@ -107,7 +108,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, sho
                     edgecolors="black", linewidths=0.5)
 
     cbar = fig.colorbar(sc, ax=ax, pad=0.02)
-    cbar.set_label("Sharpe Ratio", rotation=90)
+    cbar.set_label("Sharpe (excess)", rotation=90)
 
     if ef_pairs is not None:
         ef_pairs = np.asarray(ef_pairs, dtype=float)
@@ -128,7 +129,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, sho
                     fontsize=9, ha="left", va="bottom")
 
     ax.set_xlabel("Monthly Risk (Volatility)")
-    ax.set_ylabel("Monthly Return")
+    ax.set_ylabel("Monthly Excess Return")
     date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
     ax.set_title(f"Sample of Random Portfolios | {date_str}")
 
@@ -155,7 +156,7 @@ def mv_plot(mv_pairs: List[List[float]], save_path: str, date: pd.Timestamp, sho
 # -----------------------
 
 
-def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], show_plots: bool, rf: float, global_mv_pairs, eff_front: np.ndarray,
+def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], show_plots: bool, global_mv_pairs, eff_front: np.ndarray,
                    window_mv_data: Dict[str, Tuple[float, float]]) -> None:
 
     highlights: Dict[str, plot_ptf] = {}
@@ -171,13 +172,13 @@ def plot_window_mv(end: int, date: pd.Timestamp, mv_plot_dir: Union[str, Path], 
     fname = Path(mv_plot_dir, f"mv_oos_{end:04d}_{date_str}.png")
 
     mv_plot(mv_pairs=global_mv_pairs, save_path=str(fname), date=date,
-            show_plot=show_plots, rf=rf, highlight_ptf=highlights, ef_pairs=eff_front)
+            show_plot=show_plots, highlight_ptf=highlights, ef_pairs=eff_front)
 
 # Batch Ploto Function
 # --------------------
 
 
-def do_plot_batch(end, date, mv_plot_dir, show_plots, rf: float, mu_w: Union[np.ndarray, pd.Series],
+def do_plot_batch(end, date, mv_plot_dir, show_plots, mu_w: Union[np.ndarray, pd.Series],
                   cov_w: Union[np.ndarray, pd.DataFrame], n_ptfs: int, min_assets: int, max_assets: int,
                   random_state: int, window_mv_data) -> None:
     """
@@ -189,7 +190,7 @@ def do_plot_batch(end, date, mv_plot_dir, show_plots, rf: float, mu_w: Union[np.
 
     eff_front, _ = compute_efficient_frontier(mu_w, cov_w, n_ptfs)
 
-    plot_window_mv(end, date, mv_plot_dir, show_plots, rf,
+    plot_window_mv(end, date, mv_plot_dir, show_plots,
                    mv_pairs_t, eff_front, window_mv_data)
 
 # Allocation Plot Function
@@ -254,7 +255,7 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
         title_fontsize=9,
     )
 
-    fig.tight_layout(rect=[0, 0, 0.82, 1])
+    fig.tight_layout()
 
     date_str = date.strftime("%Y-%m-%d")
     fname = save_dir / f"alloc_{end:04d}_{date_str}.png"
@@ -264,3 +265,210 @@ def plot_allocation_frame(weights_df: pd.DataFrame, end: int, date: pd.Timestamp
         plt.show()
     else:
         plt.close(fig)
+
+# Plot Cumulative OOS Function
+# ----------------------------
+
+
+def plot_cumulative_oos(
+    oos_df: pd.DataFrame,
+    save_path: str | Path,
+    show_plot: bool = False,
+    title: str = "Cumulative Out-of-Sample Performance (Excess Returns)",
+) -> None:
+    """
+    Plot cumulative performance from returns.
+    """
+
+    oos_df = oos_df.copy().sort_index()
+    cum = (1.0 + oos_df).cumprod()
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    cum.plot(ax=ax, linewidth=2)
+
+    ax.set_yscale("log")
+    ax.set_title(title)
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Cumulative Growth")
+    ax.grid(True, linestyle="--", alpha=0.3)
+
+    fig.tight_layout()
+    image_path = Path(save_path, "cumulative_oos_ret.png")
+    fig.savefig(image_path, dpi=150)
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+# Plot MV Grid Function
+# ---------------------
+
+
+def mv_plot_on_axis(
+    ax: plt.Axes,
+    cax: plt.Axes | None,
+    mv_pairs: List[List[float]],
+    date: pd.Timestamp,
+    highlight_ptf: Dict[str, plot_ptf] | None = None,
+    ef_pairs: Union[np.ndarray, None] = None,
+    show_colorbar: bool = True,
+) -> None:
+    """
+    Same visual logic as mv_plot, but draws on a provided axis (for grids).
+    """
+    mv_pairs = np.asarray(mv_pairs, dtype=float)
+    vols = np.sqrt(mv_pairs[:, 1])
+    rets = mv_pairs[:, 0]
+
+    sharpe = np.zeros_like(rets)
+    nonzero = vols > 0
+    sharpe[nonzero] = rets[nonzero] / vols[nonzero]
+
+    sc = ax.scatter(
+        vols, rets, c=sharpe, cmap="RdBu", s=30,
+        edgecolors="black", linewidths=0.5
+    )
+
+    if show_colorbar and cax is not None:
+        cbar = plt.colorbar(sc, cax=cax)
+        cbar.set_label("Sharpe (excess)", rotation=90)
+
+    if ef_pairs is not None:
+        ef_pairs = np.asarray(ef_pairs, dtype=float)
+        ef_vol = np.sqrt(ef_pairs[:, 1])
+        ef_ret = ef_pairs[:, 0]
+        ax.plot(ef_vol, ef_ret, linewidth=2.5, label="Efficient Frontier")
+
+    if highlight_ptf:
+        for name, info in highlight_ptf.items():
+            mv_pair = info.mv_pair
+            color = info.color
+            ret_h = float(mv_pair[0])
+            vol_h = float(mv_pair[1]) ** 0.5
+
+            ax.scatter([vol_h], [ret_h], marker="x", s=80,
+                       color=color, label=name, zorder=5)
+            ax.text(vol_h, ret_h, f" {name}", color=color,
+                    fontsize=9, ha="left", va="bottom")
+
+    ax.set_xlabel("Monthly Risk (Volatility)")
+    ax.set_ylabel("Monthly Excess Return")
+    date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
+    ax.set_title(f"Sample of Random Portfolios | {date_str}")
+
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.set_facecolor("white")
+
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        legend = ax.legend(
+            loc="lower right", frameon=True, framealpha=0.7,
+            facecolor="white", edgecolor="black", fontsize=9
+        )
+        legend.get_frame().set_linewidth(0.8)
+
+
+def plot_mv_grid(img_dir: str | Path, date_strs: Sequence[str], out_name: str = "mv_grid_vertical.png", figsize: tuple[float, float] | None = None,
+                 title: str | None = None, show_plot: bool = False) -> Path:
+    """
+    Build a vertical grid (N rows x 1 col) from already-generated images in img_dir,
+    selecting images that match the provided date strings (YYYY-MM-DD).
+    """
+    img_dir = Path(img_dir)
+
+    date_to_file: dict[str, Path] = {}
+    all_imgs = sorted([p for p in img_dir.iterdir()
+                      if p.suffix.lower() in [".png"]])
+
+    for d in date_strs:
+        match = next((p for p in all_imgs if f"_{d}" in p.stem), None)
+        if match is not None:
+            date_to_file[d] = match
+        else:
+            print(f"[warn] No image found for date {d} in {img_dir}")
+
+    selected = [date_to_file[d] for d in date_strs if d in date_to_file]
+
+    if len(selected) == 0:
+        raise ValueError(
+            f"No matching images found in {img_dir} for provided dates.")
+
+    n_rows = len(selected)
+    n_cols = 1
+
+    if figsize is None:
+        figsize = (10, 3.5 * n_rows)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+
+    if n_rows == 1:
+        axes = [axes]
+
+    for ax, img_path in zip(axes, selected):
+        img = Image.open(img_path)
+        ax.imshow(img)
+        ax.axis("off")
+
+    if title is not None:
+        fig.suptitle(title, fontsize=14)
+
+    fig.tight_layout()
+
+    out_path = img_dir / out_name
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return out_path
+
+
+# Plot Allocation Functions
+# -------------------------
+
+
+def plot_allocation_panel(ax, weights_df, asset_colors=None):
+
+    assets = list(weights_df.index)
+    portfolios = list(weights_df.columns)
+    n_ptf = len(portfolios)
+    x = np.arange(1, n_ptf + 1)
+    bottoms = np.zeros(n_ptf, dtype=float)
+    weights_pct = weights_df.values * 100.0
+
+    for i, asset in enumerate(assets):
+        w = weights_pct[i, :]
+        color = asset_colors.get(asset, None) if asset_colors else None
+        ax.bar(x, w, bottom=bottoms, color=color, linewidth=0)
+        bottoms += w
+
+    ax.set_ylim(0, 100)
+    ax.set_xticks(x)
+    ax.set_xticklabels(portfolios, rotation=45, ha="right")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+
+def plot_alloc_grid(alloc_snapshots: dict, save_path: str | Path, asset_colors: dict | None = None,
+                    suptitle: str = "Portfolio Allocations Across Selected Dates") -> None:
+    dates = sorted(alloc_snapshots.keys())[:4]
+    if len(dates) == 0:
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    axes = axes.flatten()
+
+    for ax, dt in zip(axes, dates):
+        weights_df = alloc_snapshots[dt]
+        plot_allocation_panel(ax, weights_df, asset_colors=asset_colors)
+        ax.set_title(dt.strftime("%Y-%m-%d"))
+        ax.set_ylabel("Allocation (%)")
+
+    fig.suptitle(suptitle, fontsize=14)
+    fig.tight_layout()
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

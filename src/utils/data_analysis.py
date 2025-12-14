@@ -70,25 +70,6 @@ class DataAnalysisPlots:
         plt.show()
         plt.close()
 
-    def plot_return_distributions_all_assets(self, max_assets: int = 6) -> None:
-        """
-        Distribution plots for a subset of assets (saved in base_dir).
-        """
-        plt.figure(figsize=(14, 8))
-        cols = list(self.returns.columns[:max_assets])
-        n = len(cols)
-
-        nrows = 2
-        ncols = 3
-        for i, col in enumerate(cols):
-            plt.subplot(nrows, ncols, i + 1)
-            sns.histplot(self.returns[col].dropna(), kde=True, bins=30)
-            plt.title(f"Distribution — {col}")
-
-        plt.tight_layout()
-        self._savefig("return_distributions_all_assets")
-        plt.close()
-
     def plot_rolling_corr_all_assets(self, window: int = 36) -> None:
         """
         Average pairwise rolling correlation of the universe (saved in base_dir).
@@ -223,6 +204,66 @@ class DataAnalysisPlots:
 
         self._savefig(f"qq_plot_{tag}")
         plt.close()
+
+    def plot_grid_for_tickers(self, tickers: list[str], n_rows: int, n_cols: int, save_prefix: str, window: int = 24, bins: int = 30) -> None:
+
+        plot_kinds = ["drawdowns", "volatility", "sharpe", "qq", "hist"]
+
+        for kind in plot_kinds:
+            fig, axes = plt.subplots(
+                n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows)
+            )
+            axes = axes.flatten()
+
+            for ax, tkr in zip(axes, tickers[: n_rows * n_cols]):
+                if tkr not in self.returns.columns:
+                    ax.axis("off")
+                    continue
+
+                s = self.returns[tkr].dropna()
+                if s.empty:
+                    ax.axis("off")
+                    continue
+
+                if kind == "drawdowns":
+                    cum = (1 + s).cumprod()
+                    dd = cum / cum.cummax() - 1
+                    ax.plot(dd)
+
+                elif kind == "volatility":
+                    rv = s.rolling(window).std()
+                    ax.plot(rv)
+
+                elif kind == "sharpe":
+                    m = s.rolling(window).mean()
+                    sd = s.rolling(window).std()
+                    ax.plot(m / sd)
+
+                elif kind == "qq":
+                    stats.probplot(s, dist="norm", plot=ax)
+
+                elif kind == "hist":
+                    sns.histplot(
+                        s,
+                        bins=bins,
+                        kde=True,
+                        stat="density",
+                        ax=ax,
+                    )
+
+                ax.set_title(tkr)
+                ax.grid(True, linestyle="--", alpha=0.3)
+
+            # Hide unused axes
+            for ax in axes[len(tickers[: n_rows * n_cols]):]:
+                ax.axis("off")
+
+            fig.suptitle(f"{kind.upper()} | Selected Assets", fontsize=14)
+            fig.tight_layout()
+
+            path = self.base_dir / f"{save_prefix}_{kind}.png"
+            fig.savefig(path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
 
     # --------------- summary tables (all assets at once) -----------------
 
